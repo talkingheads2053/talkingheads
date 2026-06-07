@@ -496,10 +496,20 @@ func (a *Actor) Run(ctx context.Context, systemPrompt string) error {
 			}
 		}
 
-		content, hadText, toolCalls, err := a.generateTurn(ctx, &conversation)
-		if pauseDone != nil {
-			close(pauseDone)
+		// Build a one-shot stop function that closes pauseDone the first time
+		// it is called. It is passed into generateTurn so that pause phrases
+		// are cut off as soon as the model produces its first token rather
+		// than after the full generation completes.
+		pauseStopped := false
+		stopPausing := func() {
+			if !pauseStopped && pauseDone != nil {
+				pauseStopped = true
+				close(pauseDone)
+			}
 		}
+
+		content, hadText, toolCalls, err := a.generateTurn(ctx, &conversation, stopPausing)
+		stopPausing() // no-op if already triggered on the first token
 		if err != nil {
 			return err
 		}
@@ -657,7 +667,7 @@ func (a *Actor) GetMore(conversation *[]message.Message) bool {
 // spoken text was flushed to outputFunc alongside tool calls in the same turn.
 // The conversation pointer may be updated to trim old messages if the prompt
 // exceeds the model's context window.
-func (a *Actor) generateTurn(ctx context.Context, conversation *[]message.Message) (string, bool, []message.ToolCall, error) {
+func (a *Actor) generateTurn(ctx context.Context, conversation *[]message.Message, stopPausing func()) (string, bool, []message.ToolCall, error) {
 	tmplOpts := template.Options{EnableThinking: a.cfg.EnableThinking}
 	renderConv := prepareConversationForTemplate(*conversation, a.cfg.ModelFormat)
 	prompt, err := template.ApplyWithOptions(a.chatTemplate, renderConv, true, tmplOpts)
@@ -801,6 +811,9 @@ generateLoop:
 			break
 		}
 		tokenCount++
+		if tokenCount == 1 {
+			stopPausing()
+		}
 
 		n := llama.TokenToPiece(a.vocab, token, pieceBuf, 0, true)
 		if n > 0 {
