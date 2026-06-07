@@ -41,13 +41,13 @@ func (l *MQTTListener) SetEventsCh(ch chan<- string) {
 
 // SetActorPositions records the left-to-right stage order of all actors as
 // seen from the audience (e.g. ["gemmai", "phineas", "qwentin"]). When set,
-// this Actor will issue a slowlook command towards any other Actor that starts
+// this Actor will issue a look command towards any other Actor that starts
 // speaking. Pass nil or an empty slice to disable the behaviour.
 func (l *MQTTListener) SetActorPositions(positions []string) {
 	l.actorPositions = positions
 }
 
-// lookAngleFor returns the servo angle (0–180) that this Actor should use to
+// lookAngleFor returns the servo angle (45–135) that this Actor should use to
 // face the named speaker, and reports whether positioning data is available.
 // Actors are assumed to face the audience; 0° is full right, 90° is center,
 // 180° is full left from each Actor's own perspective. The angle is
@@ -72,11 +72,11 @@ func (l *MQTTListener) lookAngleFor(speaker string) (int, bool) {
 	// Higher index = to this Actor's left (audience's right) → angle > 90.
 	// Lower index = to this Actor's right (audience's left) → angle < 90.
 	angle := 90 + int(float64(speakerIdx-myIdx)*45.0/float64(n-1))
-	if angle < 10 {
-		angle = 10
+	if angle < 45 {
+		angle = 45
 	}
-	if angle > 170 {
-		angle = 170
+	if angle > 135 {
+		angle = 135
 	}
 	return angle, true
 }
@@ -209,12 +209,20 @@ func (l *MQTTListener) handleSpeakingStatus(_ mqtt.Client, msg mqtt.Message) {
 		}
 		return
 	}
-	// Another actor's speaking status — enter waiting while they speak.
+	// Another actor's speaking status — look towards them and enter waiting while they speak.
 	switch s.Status {
 	case commands.StatusSpeaking:
-		if err := l.commander.Send("wait"); err != nil {
-			if l.verbose {
-				log.Printf("failed to send wait command: %v\n", err)
+		if angle, ok := l.lookAngleFor(s.Who); ok {
+			if err := l.commander.Send(fmt.Sprintf("look %d", angle)); err != nil {
+				if l.verbose {
+					log.Printf("failed to send look command: %v\n", err)
+				}
+			}
+		} else {
+			if err := l.commander.Send("wait"); err != nil {
+				if l.verbose {
+					log.Printf("failed to send wait command: %v\n", err)
+				}
 			}
 		}
 	case commands.StatusStopped:
@@ -245,9 +253,9 @@ func (l *MQTTListener) handleSpeak(_ mqtt.Client, msg mqtt.Message) {
 	l.lastSpeaker = s.Who
 	l.lastSpeakerMu.Unlock()
 	if angle, ok := l.lookAngleFor(s.Who); ok {
-		if err := l.commander.Send(fmt.Sprintf("slowlook %d", angle)); err != nil {
+		if err := l.commander.Send(fmt.Sprintf("look %d", angle)); err != nil {
 			if l.verbose {
-				log.Printf("failed to send slowlook command: %v\n", err)
+				log.Printf("failed to send look command: %v\n", err)
 			}
 		}
 	}

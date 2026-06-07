@@ -100,8 +100,29 @@ func TestHandleSpeakingStatus_OtherActorSpeaking(t *testing.T) {
 
 	l.handleSpeakingStatus(nil, msg)
 
+	// No positions set — falls back to wait.
 	if len(mc.sentCmds) != 1 || mc.sentCmds[0] != "wait" {
 		t.Errorf("commander.Send: got %v, want [\"wait\"]", mc.sentCmds)
+	}
+}
+
+func TestHandleSpeakingStatus_OtherActorSpeaking_WithPositions(t *testing.T) {
+	mc := &mockCommander{}
+	l := newTestListener("gemmai")
+	l.commander = mc
+	l.SetActorPositions([]string{"gemmai", "phineas"})
+
+	payload, _ := json.Marshal(commands.Speaking{Who: "phineas", Status: commands.StatusSpeaking})
+	msg := &mockMessage{payload: payload, topic: "speaking/phineas"}
+
+	l.handleSpeakingStatus(nil, msg)
+
+	// Positions set — must send a look command immediately.
+	if len(mc.sentCmds) == 0 {
+		t.Fatal("expected a look command, got none")
+	}
+	if !strings.HasPrefix(mc.sentCmds[0], "look ") {
+		t.Errorf("expected command starting with 'look ', got %q", mc.sentCmds[0])
 	}
 }
 
@@ -711,7 +732,7 @@ func TestLookAngleFor_UnknownSpeaker_ReturnsFalse(t *testing.T) {
 
 // --- handleSpeak with actor positions ---
 
-func TestHandleSpeak_SendsSlowlook_WhenPositionsSet(t *testing.T) {
+func TestHandleSpeak_SendsLook_WhenPositionsSet(t *testing.T) {
 	mc := &mockCommander{}
 	l := newTestListener("gemmai")
 	l.commander = mc
@@ -720,17 +741,17 @@ func TestHandleSpeak_SendsSlowlook_WhenPositionsSet(t *testing.T) {
 	payload, _ := json.Marshal(commands.Speak{Who: "phineas", What: "hello"})
 	l.handleSpeak(nil, &mockMessage{payload: payload})
 
-	// Expect a slowlook command to have been sent.
+	// Expect a look command to have been sent.
 	if len(mc.sentCmds) == 0 {
-		t.Fatal("expected a slowlook command, got none")
+		t.Fatal("expected a look command, got none")
 	}
 	cmd := mc.sentCmds[0]
-	if !strings.HasPrefix(cmd, "slowlook ") {
-		t.Errorf("expected command starting with 'slowlook ', got %q", cmd)
+	if !strings.HasPrefix(cmd, "look ") {
+		t.Errorf("expected command starting with 'look ', got %q", cmd)
 	}
 }
 
-func TestHandleSpeak_NoSlowlook_WhenPositionsNotSet(t *testing.T) {
+func TestHandleSpeak_NoLook_WhenPositionsNotSet(t *testing.T) {
 	mc := &mockCommander{}
 	l := newTestListener("gemmai")
 	l.commander = mc
@@ -740,8 +761,8 @@ func TestHandleSpeak_NoSlowlook_WhenPositionsNotSet(t *testing.T) {
 	l.handleSpeak(nil, &mockMessage{payload: payload})
 
 	for _, cmd := range mc.sentCmds {
-		if strings.HasPrefix(cmd, "slowlook") {
-			t.Errorf("unexpected slowlook command when positions not set: %q", cmd)
+		if strings.HasPrefix(cmd, "look") {
+			t.Errorf("unexpected look command when positions not set: %q", cmd)
 		}
 	}
 }

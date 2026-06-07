@@ -73,7 +73,7 @@ func action() {
 		case StateLooking:
 			svo.SetAngle(targetAngle)
 			angle = targetAngle
-			setMode(StateStopped)
+			setMode(StateWaiting)
 
 		case StateSlowLooking:
 			angle = movement(angle, targetAngle)
