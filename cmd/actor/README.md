@@ -63,7 +63,7 @@ give me a nanosecond to consult my memory banks...
 calculating the most optimal response...
 ```
 
-When the flag is omitted the built-in default phrase list is used. Pause phrases are published with `thinking: true` in the MQTT payload so other actors automatically ignore them.
+When the flag is omitted the built-in default phrase list is used. Pause phrases are published with `thinking: true` in the MQTT payload so other actors automatically ignore them. They are also displayed in the actor's own terminal viewport so the operator can see them alongside regular output.
 
 ## System prompts
 

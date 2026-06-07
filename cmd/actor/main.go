@@ -316,7 +316,10 @@ func run(c *cli.Context) error {
 		moreFunc = ml.MoreFunc()
 		baseOutput := ml.OutputFunc()
 		basePauseOutput := ml.PauseOutputFunc()
-		pauseOutputFunc = basePauseOutput
+		pauseOutputFunc = func(content string) {
+			eventsCh <- content
+			basePauseOutput(content)
+		}
 		outputFunc = func(content string) {
 			eventsCh <- content
 			baseOutput(content)
