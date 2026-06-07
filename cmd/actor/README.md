@@ -48,7 +48,7 @@ When `--actor-positions` is set, each Actor turns to face the first Actor that s
 --actor-positions gemmai,phineas,qwentin
 ```
 
-The Actor looks up its own position in the list, then interpolates a `slowlook` servo angle in the range 45°–135° so it faces the direction of the speaking Actor. A speaker to the Actor's left produces a higher angle; one to the right produces a lower angle. Pause phrases (`thinking: true`) do not trigger a look.
+When another Actor starts speaking, this Actor immediately sends a `look` command so its head snaps to face the speaker. The angle always lands in the **[40°, 55°]** band when the speaker is to the right, or **[125°, 140°]** when to the left; within each band the exact value scales with the relative distance between the two Actors on stage. Pause phrases (`thinking: true`) do not trigger a look.
 
 ## Pause phrases
 
