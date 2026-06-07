@@ -47,11 +47,11 @@ func (l *MQTTListener) SetActorPositions(positions []string) {
 	l.actorPositions = positions
 }
 
-// lookAngleFor returns the servo angle (40–140) that this Actor should use to
+// lookAngleFor returns the servo angle (30–150) that this Actor should use to
 // face the named speaker, and reports whether positioning data is available.
 // Actors are assumed to face the audience; 0° is full right, 90° is center,
 // 180° is full left from each Actor's own perspective. The angle always falls
-// in [40, 55] when the speaker is to the right, or [125, 140] when to the
+// in [30, 60] when the speaker is to the right, or [120, 150] when to the
 // left, with the exact value scaling with relative distance between actors.
 func (l *MQTTListener) lookAngleFor(speaker string) (int, bool) {
 	if len(l.actorPositions) < 2 {
@@ -75,21 +75,21 @@ func (l *MQTTListener) lookAngleFor(speaker string) (int, bool) {
 	if absDiff < 0 {
 		absDiff = -absDiff
 	}
-	// Scale a 15° spread across the band based on relative distance (closer = less extreme).
-	spread := absDiff * 15 / (n - 1)
+	// Scale a 30° spread across the band based on relative distance (closer = less extreme).
+	spread := absDiff * 30 / (n - 1)
 	var angle int
 	if diff > 0 {
-		// Higher index = to this Actor's left → angle in [125, 140].
-		angle = 125 + spread
+		// Higher index = to this Actor's left → angle in [120, 150].
+		angle = 120 + spread
 	} else {
-		// Lower index = to this Actor's right → angle in [40, 55].
-		angle = 55 - spread
+		// Lower index = to this Actor's right → angle in [30, 60].
+		angle = 60 - spread
 	}
-	if angle < 40 {
-		angle = 40
+	if angle < 30 {
+		angle = 30
 	}
-	if angle > 140 {
-		angle = 140
+	if angle > 150 {
+		angle = 150
 	}
 	return angle, true
 }
