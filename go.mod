@@ -7,7 +7,7 @@ require (
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/eclipse/paho.mqtt.golang v1.4.3
 	github.com/gordonklaus/portaudio v0.0.0-20260203164431-765aa7dfa631
-	github.com/hybridgroup/yzma v1.16.0
+	github.com/hybridgroup/yzma v1.17.0
 	github.com/talkingheads2053/sayanything v0.0.0-20260528083745-2671dfdef6af
 	go.bug.st/serial v1.6.4
 	golang.org/x/term v0.43.0

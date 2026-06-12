@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/hybridgroup/yzma v1.16.0
+	github.com/hybridgroup/yzma v1.17.0
 	github.com/talkingheads2053/talkingheads v0.0.0-00010101000000-000000000000
 	github.com/urfave/cli/v2 v2.27.7
 )
