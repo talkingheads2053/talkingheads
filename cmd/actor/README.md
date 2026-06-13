@@ -26,6 +26,15 @@ One of `--model-url` or `--model-path` is required.
 | `--pause-interval` | | `5` | Seconds between repeated pause phrases while waiting for the model's first token |
 | `--actor-positions` | `-ap` | | Comma-separated left-to-right stage order of all actors as seen from the audience (e.g. `gemmai,phineas,qwentin`); pass the same value to every actor |
 
+### Installation flags
+
+| Flag | Alias | Default | Description |
+|---|---|---|---|
+| `--libpath` | `-l` | | Path to the llama.cpp library directory (or set `YZMA_LIB`) |
+| `--processor` | `-p` | `cpu` | Processor to use (`cpu` or `cuda`); auto-detected when omitted |
+| `--update-install` | | `false` | Re-download yzma even when it is already installed (picks up the latest version) |
+| `--install-version` | | | Pin a specific llama.cpp build to install (e.g. `b5000`); overrides the latest-version lookup; implies `--update-install` behaviour |
+
 ### Sampling flags
 
 | Flag | Default | Description |

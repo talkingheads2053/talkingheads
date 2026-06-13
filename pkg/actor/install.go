@@ -11,7 +11,7 @@ import (
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
-func EnsureInstall(libPath string, processor string, updateInstall bool) error {
+func EnsureInstall(libPath string, processor string, updateInstall bool, installVersion string) error {
 	if _, err := os.Stat(libPath); os.IsNotExist(err) {
 		if err := os.Mkdir(libPath, 0755); err != nil {
 			return err
@@ -19,9 +19,15 @@ func EnsureInstall(libPath string, processor string, updateInstall bool) error {
 	}
 
 	if !download.AlreadyInstalled(libPath) || updateInstall {
-		version, err := download.LlamaLatestVersion()
-		if err != nil {
-			return err
+		var version string
+		if installVersion != "" {
+			version = installVersion
+		} else {
+			var err error
+			version, err = download.LlamaLatestVersion()
+			if err != nil {
+				return err
+			}
 		}
 
 		if processor == "" {

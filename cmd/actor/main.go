@@ -47,6 +47,11 @@ func main() {
 				Usage: "update the installation of yzma if a new version of llama.cpp is available",
 				Value: false,
 			},
+			&cli.StringFlag{
+				Name:  "install-version",
+				Usage: "specific llama.cpp version to install (e.g. b5000); overrides the latest-version lookup",
+			},
+
 			&cli.StringSliceFlag{
 				Name:    "script",
 				Usage:   "path to a system prompt file (repeatable; files are concatenated in order)",
@@ -190,6 +195,7 @@ func run(c *cli.Context) error {
 	modelURL := c.String("model-url")
 	processor := c.String("processor")
 	updateInstall := c.Bool("update-install")
+	installVersion := c.String("install-version")
 	verbose := c.Bool("verbose")
 	scriptFiles := c.StringSlice("script")
 	server := c.String("server")
@@ -216,7 +222,7 @@ func run(c *cli.Context) error {
 		return cli.Exit(fmt.Sprintf("failed to set YZMA_LIB: %v", err), 1)
 	}
 
-	if err := actor.EnsureInstall(libPath, processor, updateInstall); err != nil {
+	if err := actor.EnsureInstall(libPath, processor, updateInstall, installVersion); err != nil {
 		return cli.Exit(fmt.Sprintf("failed to install yzma: %v", err), 1)
 	}
 
