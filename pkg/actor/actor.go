@@ -603,13 +603,14 @@ func (a *Actor) setupPauseWords() func() string {
 	for i := range deck {
 		deck[i] = i
 	}
-	rand.Shuffle(len(deck), func(i, j int) { deck[i], deck[j] = deck[j], deck[i] })
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	r.Shuffle(len(deck), func(i, j int) { deck[i], deck[j] = deck[j], deck[i] })
 	pos := 0
 	return func() string {
 		mu.Lock()
 		defer mu.Unlock()
 		if pos >= len(deck) {
-			rand.Shuffle(len(deck), func(i, j int) { deck[i], deck[j] = deck[j], deck[i] })
+			r.Shuffle(len(deck), func(i, j int) { deck[i], deck[j] = deck[j], deck[i] })
 			pos = 0
 		}
 		w := a.cfg.PauseWords[deck[pos]]
