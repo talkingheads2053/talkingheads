@@ -2,7 +2,7 @@ package actor
 
 import "github.com/hybridgroup/yzma/pkg/message"
 
-var defaultPauseWords = []string{
+var defaultThinkingPhrases = []string{
 	"let me think about that for a moment...",
 	"I am going to think about that for a moment...",
 	"let me consider that question carefully...",
@@ -63,20 +63,20 @@ var defaultPauseWords = []string{
 }
 
 const (
-	DefaultTemperature     = float32(0.6)
-	DefaultTopP            = float32(0.95)
-	DefaultMinP            = float32(0.05)
-	DefaultTopK            = int32(20)
-	DefaultMaxTokens       = 2048
-	DefaultContextSize     = 4096
-	DefaultRepeatPenalty   = float32(1.0) // 1.0 = disabled
-	DefaultFreqPenalty     = float32(0.0) // 0.0 = disabled
-	DefaultPresencePenalty = float32(0.0) // 0.0 = disabled
-	DefaultDryMultiplier   = float32(0.0) // 0.0 = disabled
-	DefaultBatchSize       = uint32(0)    // 0 = use llama.cpp default
-	DefaultUBatchSize      = uint32(0)    // 0 = use llama.cpp default
-	DefaultPauseInterval   = 5            // seconds between repeated pause words
-	DefaultMaxSentences    = 0            // 0 = unlimited
+	DefaultTemperature      = float32(0.6)
+	DefaultTopP             = float32(0.95)
+	DefaultMinP             = float32(0.05)
+	DefaultTopK             = int32(20)
+	DefaultMaxTokens        = 2048
+	DefaultContextSize      = 4096
+	DefaultRepeatPenalty    = float32(1.0) // 1.0 = disabled
+	DefaultFreqPenalty      = float32(0.0) // 0.0 = disabled
+	DefaultPresencePenalty  = float32(0.0) // 0.0 = disabled
+	DefaultDryMultiplier    = float32(0.0) // 0.0 = disabled
+	DefaultBatchSize        = uint32(0)    // 0 = use llama.cpp default
+	DefaultUBatchSize       = uint32(0)    // 0 = use llama.cpp default
+	DefaultThinkingInterval = 5            // seconds between repeated thinking phrases
+	DefaultMaxSentences     = 0            // 0 = unlimited
 )
 
 // Config holds the tunable parameters for an Actor.
@@ -122,14 +122,14 @@ type Config struct {
 	UseMmap bool
 	// Verbose enables verbose logging for debugging.
 	Verbose bool
-	// PauseWords is a list of filler words (e.g. "well", "hmm") that the actor
+	// ThinkingPhrases is a list of filler phrases (e.g. "let me think...") that the actor
 	// speaks immediately after receiving a new request, before the model has
 	// produced its first token, to mask the inference startup latency.
 	// Set to nil or an empty slice to disable.
-	PauseWords []string
-	// PauseInterval is the number of seconds between repeated pause words while
-	// waiting for the model to produce its first token. Defaults to DefaultPauseInterval.
-	PauseInterval int
+	ThinkingPhrases []string
+	// ThinkingInterval is the number of seconds between repeated thinking phrases while
+	// waiting for the model to produce its first token. Defaults to DefaultThinkingInterval.
+	ThinkingInterval int
 	// MaxSentences caps the number of sentences spoken per turn. Sentences
 	// beyond the limit are dropped before being emitted to outputFunc.
 	// 0 = unlimited.
@@ -139,24 +139,24 @@ type Config struct {
 // DefaultConfig returns a Config populated with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Temperature:     DefaultTemperature,
-		TopP:            DefaultTopP,
-		MinP:            DefaultMinP,
-		TopK:            DefaultTopK,
-		MaxTokens:       DefaultMaxTokens,
-		ContextSize:     DefaultContextSize,
-		BatchSize:       DefaultBatchSize,
-		UBatchSize:      DefaultUBatchSize,
-		RepeatPenalty:   DefaultRepeatPenalty,
-		FreqPenalty:     DefaultFreqPenalty,
-		PresencePenalty: DefaultPresencePenalty,
-		DryMultiplier:   DefaultDryMultiplier,
-		InjectTools:     true,
-		EnableThinking:  false,
-		UseMmap:         true,
-		Verbose:         false,
-		PauseWords:      defaultPauseWords,
-		PauseInterval:   DefaultPauseInterval,
-		MaxSentences:    DefaultMaxSentences,
+		Temperature:      DefaultTemperature,
+		TopP:             DefaultTopP,
+		MinP:             DefaultMinP,
+		TopK:             DefaultTopK,
+		MaxTokens:        DefaultMaxTokens,
+		ContextSize:      DefaultContextSize,
+		BatchSize:        DefaultBatchSize,
+		UBatchSize:       DefaultUBatchSize,
+		RepeatPenalty:    DefaultRepeatPenalty,
+		FreqPenalty:      DefaultFreqPenalty,
+		PresencePenalty:  DefaultPresencePenalty,
+		DryMultiplier:    DefaultDryMultiplier,
+		InjectTools:      true,
+		EnableThinking:   false,
+		UseMmap:          true,
+		Verbose:          false,
+		ThinkingPhrases:  defaultThinkingPhrases,
+		ThinkingInterval: DefaultThinkingInterval,
+		MaxSentences:     DefaultMaxSentences,
 	}
 }

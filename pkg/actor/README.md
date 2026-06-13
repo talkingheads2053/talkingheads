@@ -98,7 +98,7 @@ The Actor tracks the last non-thinking speaker internally, updated each time a `
 
 When another Actor publishes a sentence to `speak/<other>`, this Actor receives it via the `speak/#` subscription and adds it to the conversation as context. The heard speech is buffered and injected into the conversation immediately before the next Direction is processed — the Actor never responds to heard speech on its own.
 
-Pause phrases (filler sentences spoken while the model is generating, such as `"let me think..."`) are published with `"thinking": true` in the JSON payload. Receiving Actors check this field and discard those messages — they are never added to the conversation context. Thinking messages also do **not** update the last-speaker record.
+Thinking phrases (filler sentences spoken while the model is generating, such as `"let me think..."`) are published with `"thinking": true` in the JSON payload. Receiving Actors check this field and discard those messages — they are never added to the conversation context. Thinking messages also do **not** update the last-speaker record.
 
 ### `speak` payload fields
 
@@ -106,13 +106,21 @@ Pause phrases (filler sentences spoken while the model is generating, such as `"
 |---|---|---|
 | `who` | string | Name of the Actor that spoke |
 | `what` | string | The spoken text |
-| `thinking` | bool | `true` when the message is a pause phrase; omitted (false) for real speech |
+| `thinking` | bool | `true` when the message is a thinking phrase; omitted (false) for real speech |
 
 ### Speaking status
 
-When Dialogue begins playing audio for this Actor it publishes a `speaking/<name>` message with `status: "speaking"`. When playback finishes it publishes `status: "stopped"`. The Actor logs these to the console:
+When Dialogue begins playing audio for this Actor it publishes a `speaking/<name>` message with `status: "speaking"`. When playback finishes it publishes `status: "stopped"`. The Actor uses these notifications to:
 
+- Drive the head-movement servo (`speak` / `stop` commands).
+- **Gate thinking-phrase pacing** — the next thinking phrase is not emitted until the current one has finished playing. `MQTTListener` tracks in-flight phrase count via `speakN`; `WaitSpeakingDoneFunc()` returns a function that blocks until `speakN` reaches zero. When `SetSpeakingDoneFunc` is called with that function, `runThinkingPhrases` waits for each phrase to complete before emitting the next.
+
+## Thinking phrase pacing
+
+By default thinking phrases are emitted on a random timer (`ThinkingInterval` ± jitter). When connected over MQTT the actor also waits for the current phrase to finish being spoken before scheduling the next one:
+
+```go
+a.SetSpeakingDoneFunc(ml.WaitSpeakingDoneFunc())
 ```
-now speaking
-stopped speaking
-```
+
+This prevents the audio queue from filling with multiple overlapping thinking phrases when the model generates slowly.

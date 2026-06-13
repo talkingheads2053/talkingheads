@@ -22,8 +22,8 @@ One of `--model-url` or `--model-path` is required.
 | `--serial` | | | Serial port for sending action commands to the microcontroller (e.g. `/dev/ttyACM0`) |
 | `--baud` | | `9600` | Baud rate for the serial port |
 | `--theme` | | | Personality color sent to the action firmware on startup (`red`, `green`, `blue`, `purple`, `orange`, `yellow`) |
-| `--pause-words-file` | `-pw` | | Path to a file of pause phrases, one per line; overrides the built-in defaults |
-| `--pause-interval` | | `5` | Seconds between repeated pause phrases while waiting for the model's first token |
+| `--thinking-phrases-file` | `-tp` | | Path to a file of thinking phrases, one per line; overrides the built-in defaults |
+| `--thinking-interval` | | `5` | Seconds between repeated thinking phrases while waiting for the model's first token |
 | `--actor-positions` | `-ap` | | Comma-separated left-to-right stage order of all actors as seen from the audience (e.g. `gemmai,phineas,qwentin`); pass the same value to every actor |
 
 ### Installation flags
@@ -57,13 +57,13 @@ When `--actor-positions` is set, each Actor turns to face the first Actor that s
 --actor-positions gemmai,phineas,qwentin
 ```
 
-When another Actor starts speaking, this Actor immediately sends a `look` command so its head snaps to face the speaker. The angle always lands in the **[30°, 60°]** band when the speaker is to the right, or **[120°, 150°]** when to the left; within each band the exact value scales with the relative distance between the two Actors on stage. Pause phrases (`thinking: true`) do not trigger a look.
+When another Actor starts speaking, this Actor immediately sends a `look` command so its head snaps to face the speaker. The angle always lands in the **[30°, 60°]** band when the speaker is to the right, or **[120°, 150°]** when to the left; within each band the exact value scales with the relative distance between the two Actors on stage. Thinking phrases (`thinking: true`) do not trigger a look.
 
-## Pause phrases
+## Thinking phrases
 
-While the model is generating a response, the actor immediately speaks a randomly chosen *pause phrase* (e.g. `"let me think about that for a moment..."`) to mask the inference startup latency. Additional phrases are emitted at roughly `--pause-interval` second intervals until the first token arrives.
+While the model is generating a response, the actor immediately speaks a randomly chosen *thinking phrase* (e.g. `"let me think about that for a moment..."`) to mask the inference startup latency. Additional phrases are emitted at roughly `--thinking-interval` second intervals until the first token arrives.
 
-The `--pause-words-file` flag loads phrases from a plain-text file — one phrase per line. Blank lines and lines beginning with `#` are ignored:
+The `--thinking-phrases-file` flag loads phrases from a plain-text file — one phrase per line. Blank lines and lines beginning with `#` are ignored:
 
 ```text
 # Llama3000 pause phrases
@@ -72,7 +72,7 @@ give me a nanosecond to consult my memory banks...
 calculating the most optimal response...
 ```
 
-When the flag is omitted the built-in default phrase list is used. Pause phrases are published with `thinking: true` in the MQTT payload so other actors automatically ignore them. They are also displayed in the actor's own terminal viewport so the operator can see them alongside regular output.
+When the flag is omitted the built-in default phrase list is used. Thinking phrases are published with `thinking: true` in the MQTT payload so other actors automatically ignore them. They are also displayed in the actor's own terminal viewport so the operator can see them alongside regular output.
 
 ## System prompts
 

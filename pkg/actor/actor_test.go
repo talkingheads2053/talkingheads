@@ -382,74 +382,74 @@ func TestCoalesceSameRole_HandlesEmptyContent(t *testing.T) {
 	}
 }
 
-// --- SetPauseOutputFunc / runPauseWords ---
+// --- SetThinkingOutputFunc / runThinkingPhrases ---
 
-func TestSetPauseOutputFunc_IsStored(t *testing.T) {
+func TestSetThinkingOutputFunc_IsStored(t *testing.T) {
 	a := &Actor{}
 	fn := func(s string) {}
-	a.SetPauseOutputFunc(fn)
-	if a.pauseOutputFunc == nil {
-		t.Error("expected pauseOutputFunc to be set after SetPauseOutputFunc")
+	a.SetThinkingOutputFunc(fn)
+	if a.thinkingOutputFunc == nil {
+		t.Error("expected thinkingOutputFunc to be set after SetThinkingOutputFunc")
 	}
 }
 
-func TestSetPauseOutputFunc_NilClearsField(t *testing.T) {
-	a := &Actor{pauseOutputFunc: func(s string) {}}
-	a.SetPauseOutputFunc(nil)
-	if a.pauseOutputFunc != nil {
-		t.Error("expected pauseOutputFunc to be nil after SetPauseOutputFunc(nil)")
+func TestSetThinkingOutputFunc_NilClearsField(t *testing.T) {
+	a := &Actor{thinkingOutputFunc: func(s string) {}}
+	a.SetThinkingOutputFunc(nil)
+	if a.thinkingOutputFunc != nil {
+		t.Error("expected thinkingOutputFunc to be nil after SetThinkingOutputFunc(nil)")
 	}
 }
 
-func TestRunPauseWords_UsesPauseOutputFunc_WhenSet(t *testing.T) {
+func TestRunThinkingPhrases_UsesThinkingOutputFunc_WhenSet(t *testing.T) {
 	var mu sync.Mutex
-	var pauseCalls, outputCalls int
+	var thinkingCalls, outputCalls int
 
 	a := &Actor{
 		cfg: Config{
-			PauseWords:    []string{"hmm..."},
-			PauseInterval: 60, // long interval so only the immediate first word fires
+			ThinkingPhrases:  []string{"hmm..."},
+			ThinkingInterval: 60, // long interval so only the immediate first phrase fires
 		},
-		outputFunc:      func(s string) { mu.Lock(); outputCalls++; mu.Unlock() },
-		pauseOutputFunc: func(s string) { mu.Lock(); pauseCalls++; mu.Unlock() },
+		outputFunc:         func(s string) { mu.Lock(); outputCalls++; mu.Unlock() },
+		thinkingOutputFunc: func(s string) { mu.Lock(); thinkingCalls++; mu.Unlock() },
 	}
 
 	done := make(chan struct{})
-	next := a.setupPauseWords()
-	go a.runPauseWords(done, next)
+	next := a.setupThinkingPhrases()
+	go a.runThinkingPhrases(done, next)
 
-	// Give the goroutine time to emit the first (immediate) pause word.
+	// Give the goroutine time to emit the first (immediate) thinking phrase.
 	time.Sleep(50 * time.Millisecond)
 	close(done)
 
 	mu.Lock()
-	p, o := pauseCalls, outputCalls
+	p, o := thinkingCalls, outputCalls
 	mu.Unlock()
 
 	if p == 0 {
-		t.Error("expected pauseOutputFunc to be called at least once")
+		t.Error("expected thinkingOutputFunc to be called at least once")
 	}
 	if o != 0 {
 		t.Errorf("expected outputFunc to not be called, got %d calls", o)
 	}
 }
 
-func TestRunPauseWords_FallsBackToOutputFunc_WhenPauseOutputFuncNil(t *testing.T) {
+func TestRunThinkingPhrases_FallsBackToOutputFunc_WhenThinkingOutputFuncNil(t *testing.T) {
 	var mu sync.Mutex
 	var outputCalls int
 
 	a := &Actor{
 		cfg: Config{
-			PauseWords:    []string{"hmm..."},
-			PauseInterval: 60,
+			ThinkingPhrases:  []string{"hmm..."},
+			ThinkingInterval: 60,
 		},
-		outputFunc:      func(s string) { mu.Lock(); outputCalls++; mu.Unlock() },
-		pauseOutputFunc: nil,
+		outputFunc:         func(s string) { mu.Lock(); outputCalls++; mu.Unlock() },
+		thinkingOutputFunc: nil,
 	}
 
 	done := make(chan struct{})
-	next := a.setupPauseWords()
-	go a.runPauseWords(done, next)
+	next := a.setupThinkingPhrases()
+	go a.runThinkingPhrases(done, next)
 
 	time.Sleep(50 * time.Millisecond)
 	close(done)
@@ -459,6 +459,55 @@ func TestRunPauseWords_FallsBackToOutputFunc_WhenPauseOutputFuncNil(t *testing.T
 	mu.Unlock()
 
 	if o == 0 {
-		t.Error("expected outputFunc to be called when pauseOutputFunc is nil")
+		t.Error("expected outputFunc to be called when thinkingOutputFunc is nil")
+	}
+}
+
+func TestSetSpeakingDoneFunc_IsStored(t *testing.T) {
+	a := &Actor{}
+	fn := func() {}
+	a.SetSpeakingDoneFunc(fn)
+	if a.speakingDoneFunc == nil {
+		t.Error("expected speakingDoneFunc to be set after SetSpeakingDoneFunc")
+	}
+}
+
+func TestSetSpeakingDoneFunc_NilClearsField(t *testing.T) {
+	a := &Actor{speakingDoneFunc: func() {}}
+	a.SetSpeakingDoneFunc(nil)
+	if a.speakingDoneFunc != nil {
+		t.Error("expected speakingDoneFunc to be nil after SetSpeakingDoneFunc(nil)")
+	}
+}
+
+func TestRunThinkingPhrases_CallsSpeakingDoneFunc_AfterEachPhrase(t *testing.T) {
+	var mu sync.Mutex
+	var emitCalls, doneCalls int
+
+	a := &Actor{
+		cfg: Config{
+			ThinkingPhrases:  []string{"hmm..."},
+			ThinkingInterval: 60, // long interval — only the immediate first phrase fires
+		},
+		thinkingOutputFunc: func(s string) { mu.Lock(); emitCalls++; mu.Unlock() },
+		speakingDoneFunc:   func() { mu.Lock(); doneCalls++; mu.Unlock() },
+	}
+
+	done := make(chan struct{})
+	next := a.setupThinkingPhrases()
+	go a.runThinkingPhrases(done, next)
+
+	time.Sleep(50 * time.Millisecond)
+	close(done)
+
+	mu.Lock()
+	e, d := emitCalls, doneCalls
+	mu.Unlock()
+
+	if e == 0 {
+		t.Error("expected thinkingOutputFunc to be called at least once")
+	}
+	if d != e {
+		t.Errorf("expected speakingDoneFunc to be called once per emit; emits=%d, doneFunc calls=%d", e, d)
 	}
 }

@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func TestLoadPauseWords_BasicPhrases(t *testing.T) {
+func TestLoadThinkingPhrases_BasicPhrases(t *testing.T) {
 	f := writeTempFile(t, "let me think...\ngive me a moment...\nhold on...\n")
-	words, err := loadPauseWords(f)
+	words, err := loadThinkingPhrases(f)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -23,9 +23,9 @@ func TestLoadPauseWords_BasicPhrases(t *testing.T) {
 	}
 }
 
-func TestLoadPauseWords_SkipsBlankLines(t *testing.T) {
+func TestLoadThinkingPhrases_SkipsBlankLines(t *testing.T) {
 	f := writeTempFile(t, "first phrase...\n\n\nsecond phrase...\n")
-	words, err := loadPauseWords(f)
+	words, err := loadThinkingPhrases(f)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -34,9 +34,9 @@ func TestLoadPauseWords_SkipsBlankLines(t *testing.T) {
 	}
 }
 
-func TestLoadPauseWords_SkipsCommentLines(t *testing.T) {
+func TestLoadThinkingPhrases_SkipsCommentLines(t *testing.T) {
 	f := writeTempFile(t, "# this is a comment\nreal phrase...\n# another comment\n")
-	words, err := loadPauseWords(f)
+	words, err := loadThinkingPhrases(f)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -45,9 +45,9 @@ func TestLoadPauseWords_SkipsCommentLines(t *testing.T) {
 	}
 }
 
-func TestLoadPauseWords_TrimsWhitespace(t *testing.T) {
+func TestLoadThinkingPhrases_TrimsWhitespace(t *testing.T) {
 	f := writeTempFile(t, "  leading spaces...\ntrailing spaces...  \n  both ends...  \n")
-	words, err := loadPauseWords(f)
+	words, err := loadThinkingPhrases(f)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -59,9 +59,9 @@ func TestLoadPauseWords_TrimsWhitespace(t *testing.T) {
 	}
 }
 
-func TestLoadPauseWords_EmptyFile(t *testing.T) {
+func TestLoadThinkingPhrases_EmptyFile(t *testing.T) {
 	f := writeTempFile(t, "")
-	words, err := loadPauseWords(f)
+	words, err := loadThinkingPhrases(f)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,8 +70,8 @@ func TestLoadPauseWords_EmptyFile(t *testing.T) {
 	}
 }
 
-func TestLoadPauseWords_FileNotFound(t *testing.T) {
-	_, err := loadPauseWords("/nonexistent/path/to/file.txt")
+func TestLoadThinkingPhrases_FileNotFound(t *testing.T) {
+	_, err := loadThinkingPhrases("/nonexistent/path/to/file.txt")
 	if err == nil {
 		t.Error("expected error for missing file, got nil")
 	}
@@ -79,7 +79,7 @@ func TestLoadPauseWords_FileNotFound(t *testing.T) {
 
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
-	f := filepath.Join(t.TempDir(), "pause_words.txt")
+	f := filepath.Join(t.TempDir(), "thinking_phrases.txt")
 	if err := os.WriteFile(f, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}

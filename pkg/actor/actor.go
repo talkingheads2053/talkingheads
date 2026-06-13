@@ -41,7 +41,8 @@ type Actor struct {
 
 	moreConversationFunc func(conversation *[]message.Message)
 	outputFunc           func(content string)
-	pauseOutputFunc      func(content string)
+	thinkingOutputFunc   func(content string)
+	speakingDoneFunc     func()
 	tools                map[string]Tool
 	toolsJSON            string
 }
@@ -469,10 +470,10 @@ func (a *Actor) Run(ctx context.Context, systemPrompt string) error {
 	needMoreInput := true
 	consecutiveToolOnlyTurns := 0
 
-	nextPauseWord := a.setupPauseWords()
+	nextThinkingPhrase := a.setupThinkingPhrases()
 
 	for {
-		var pauseDone chan struct{}
+		var thinkingDone chan struct{}
 		if needMoreInput {
 			consecutiveToolOnlyTurns = 0
 			before := len(conversation)
@@ -490,21 +491,21 @@ func (a *Actor) Run(ctx context.Context, systemPrompt string) error {
 				}
 			}
 
-			if len(a.cfg.PauseWords) > 0 && a.outputFunc != nil {
-				pauseDone = make(chan struct{})
-				go a.runPauseWords(pauseDone, nextPauseWord)
+			if len(a.cfg.ThinkingPhrases) > 0 && a.outputFunc != nil {
+				thinkingDone = make(chan struct{})
+				go a.runThinkingPhrases(thinkingDone, nextThinkingPhrase)
 			}
 		}
 
-		// Build a one-shot stop function that closes pauseDone the first time
-		// it is called. It is passed into generateTurn so that pause phrases
+		// Build a one-shot stop function that closes thinkingDone the first time
+		// it is called. It is passed into generateTurn so that thinking phrases
 		// are cut off as soon as the model produces its first token rather
 		// than after the full generation completes.
-		pauseStopped := false
+		thinkingStopped := false
 		stopPausing := func() {
-			if !pauseStopped && pauseDone != nil {
-				pauseStopped = true
-				close(pauseDone)
+			if !thinkingStopped && thinkingDone != nil {
+				thinkingStopped = true
+				close(thinkingDone)
 			}
 		}
 
@@ -585,21 +586,29 @@ func (a *Actor) handleToolCalls(ctx context.Context, conversation *[]message.Mes
 	return consecutiveToolOnlyTurns, false
 }
 
-// SetPauseOutputFunc sets an alternate output function used when emitting
-// pause phrases. When set, pause phrases are published via this function
+// SetThinkingOutputFunc sets an alternate output function used when emitting
+// thinking phrases. When set, thinking phrases are published via this function
 // instead of the regular outputFunc, allowing them to be flagged with
 // Thinking=true so other Actors can ignore them.
-func (a *Actor) SetPauseOutputFunc(f func(content string)) {
-	a.pauseOutputFunc = f
+func (a *Actor) SetThinkingOutputFunc(f func(content string)) {
+	a.thinkingOutputFunc = f
 }
 
-// setupPauseWords builds a shuffled deck of pause words and returns a function
-// that yields the next word, reshuffling when the deck is exhausted. A mutex
-// guards the deck so the goroutine from the previous turn may still be exiting
-// when the next one starts.
-func (a *Actor) setupPauseWords() func() string {
+// SetSpeakingDoneFunc registers a callback that blocks until the most recently
+// emitted phrase has finished being spoken. When set, runThinkingPhrases calls it
+// after each thinking phrase so the next phrase is not emitted until the current
+// one has been fully played back.
+func (a *Actor) SetSpeakingDoneFunc(fn func()) {
+	a.speakingDoneFunc = fn
+}
+
+// setupThinkingPhrases builds a shuffled deck of thinking phrases and returns a
+// function that yields the next phrase, reshuffling when the deck is exhausted.
+// A mutex guards the deck so the goroutine from the previous turn may still be
+// exiting when the next one starts.
+func (a *Actor) setupThinkingPhrases() func() string {
 	var mu sync.Mutex
-	deck := make([]int, len(a.cfg.PauseWords))
+	deck := make([]int, len(a.cfg.ThinkingPhrases))
 	for i := range deck {
 		deck[i] = i
 	}
@@ -613,23 +622,23 @@ func (a *Actor) setupPauseWords() func() string {
 			r.Shuffle(len(deck), func(i, j int) { deck[i], deck[j] = deck[j], deck[i] })
 			pos = 0
 		}
-		w := a.cfg.PauseWords[deck[pos]]
+		w := a.cfg.ThinkingPhrases[deck[pos]]
 		pos++
 		return w
 	}
 }
 
-// runPauseWords emits pause words via outputFunc (or pauseOutputFunc when set)
-// until done is closed. It is run in a goroutine and should be stopped by
-// closing done.
-func (a *Actor) runPauseWords(done <-chan struct{}, next func() string) {
+// runThinkingPhrases emits thinking phrases via outputFunc (or thinkingOutputFunc
+// when set) until done is closed. It is run in a goroutine and should be
+// stopped by closing done.
+func (a *Actor) runThinkingPhrases(done <-chan struct{}, next func() string) {
 	emit := a.outputFunc
-	if a.pauseOutputFunc != nil {
-		emit = a.pauseOutputFunc
+	if a.thinkingOutputFunc != nil {
+		emit = a.thinkingOutputFunc
 	}
-	maxInterval := a.cfg.PauseInterval
+	maxInterval := a.cfg.ThinkingInterval
 	if maxInterval <= 0 {
-		maxInterval = DefaultPauseInterval
+		maxInterval = DefaultThinkingInterval
 	}
 	// half of maxInterval in milliseconds, used as the random base
 	halfMs := int64(maxInterval) * 500
@@ -640,13 +649,24 @@ func (a *Actor) runPauseWords(done <-chan struct{}, next func() string) {
 		return
 	default:
 		emit(next())
+		if a.speakingDoneFunc != nil {
+			a.speakingDoneFunc()
+		}
 	}
 
 	for {
 		jitter := time.Duration(halfMs+rand.Int63n(halfMs+1)) * time.Millisecond
 		select {
 		case <-time.After(jitter):
+			select {
+			case <-done:
+				return
+			default:
+			}
 			emit(next())
+			if a.speakingDoneFunc != nil {
+				a.speakingDoneFunc()
+			}
 		case <-done:
 			return
 		}

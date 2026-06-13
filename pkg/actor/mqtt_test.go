@@ -51,6 +51,7 @@ func TestHandleSpeakingStatus_Speaking(t *testing.T) {
 func TestHandleSpeakingStatus_Stopped(t *testing.T) {
 	mc := &mockCommander{}
 	l := &MQTTListener{name: "testactor", commander: mc}
+	l.speakCond = sync.NewCond(&l.speakMu)
 
 	payload, _ := json.Marshal(commands.Speaking{Who: "testactor", Status: commands.StatusStopped})
 	msg := &mockMessage{payload: payload, topic: "speaking/testactor"}
@@ -143,13 +144,15 @@ func TestHandleSpeakingStatus_OtherActorStopped(t *testing.T) {
 // newTestListener builds a MQTTListener suitable for unit tests: no real MQTT
 // connection and buffered channels.
 func newTestListener(name string) *MQTTListener {
-	return &MQTTListener{
+	l := &MQTTListener{
 		name:      name,
 		commander: &mockCommander{},
 		incoming:  make(chan string, 32),
 		heard:     make(chan string, 64),
 		done:      make(chan struct{}),
 	}
+	l.speakCond = sync.NewCond(&l.speakMu)
+	return l
 }
 
 // --- handleSpeak ---
@@ -167,7 +170,7 @@ func TestHandleSpeak_IgnoresSelf(t *testing.T) {
 	}
 }
 
-func TestHandleSpeak_IgnoresPauseWord(t *testing.T) {
+func TestHandleSpeak_IgnoresThinkingPhrase(t *testing.T) {
 	l := newTestListener("gemmai")
 
 	payload, _ := json.Marshal(commands.Speak{Who: "phineas", What: "let me think...", Thinking: true})
@@ -511,7 +514,7 @@ func TestMoreFunc_WithPreprocessCB_ClosedDone(t *testing.T) {
 	}
 }
 
-func TestMoreFunc_PauseWordsNotAddedToConversation(t *testing.T) {
+func TestMoreFunc_ThinkingPhrasesNotAddedToConversation(t *testing.T) {
 	l := newTestListener("gemmai")
 
 	// Thinking phrases are filtered in handleSpeak before reaching heard;
@@ -764,5 +767,121 @@ func TestHandleSpeak_NoLook_WhenPositionsNotSet(t *testing.T) {
 		if strings.HasPrefix(cmd, "look") {
 			t.Errorf("unexpected look command when positions not set: %q", cmd)
 		}
+	}
+}
+
+// --- speakN tracking / WaitSpeakingDoneFunc ---
+
+func TestHandleSpeakingStatus_Stopped_DecrementsSpeakN(t *testing.T) {
+	l := newTestListener("gemmai")
+	l.speakMu.Lock()
+	l.speakN = 1
+	l.speakMu.Unlock()
+
+	payload, _ := json.Marshal(commands.Speaking{Who: "gemmai", Status: commands.StatusStopped})
+	l.handleSpeakingStatus(nil, &mockMessage{payload: payload})
+
+	l.speakMu.Lock()
+	n := l.speakN
+	l.speakMu.Unlock()
+
+	if n != 0 {
+		t.Errorf("expected speakN=0 after StatusStopped, got %d", n)
+	}
+}
+
+func TestHandleSpeakingStatus_Stopped_DoesNotGoBelowZero(t *testing.T) {
+	l := newTestListener("gemmai")
+	// speakN starts at 0
+
+	payload, _ := json.Marshal(commands.Speaking{Who: "gemmai", Status: commands.StatusStopped})
+	l.handleSpeakingStatus(nil, &mockMessage{payload: payload})
+
+	l.speakMu.Lock()
+	n := l.speakN
+	l.speakMu.Unlock()
+
+	if n != 0 {
+		t.Errorf("expected speakN=0, got %d", n)
+	}
+}
+
+func TestWaitSpeakingDoneFunc_ReturnsImmediately_WhenZero(t *testing.T) {
+	l := newTestListener("gemmai")
+	// speakN is 0
+
+	waitFn := l.WaitSpeakingDoneFunc()
+	done := make(chan struct{})
+	go func() {
+		waitFn()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Error("WaitSpeakingDoneFunc did not return immediately when speakN=0")
+	}
+}
+
+func TestWaitSpeakingDoneFunc_BlocksUntilSpeakNReachesZero(t *testing.T) {
+	l := newTestListener("gemmai")
+	l.speakMu.Lock()
+	l.speakN = 1
+	l.speakMu.Unlock()
+
+	waitFn := l.WaitSpeakingDoneFunc()
+	done := make(chan struct{})
+	go func() {
+		waitFn()
+		close(done)
+	}()
+
+	// Must still be blocked after a short wait.
+	select {
+	case <-done:
+		t.Fatal("WaitSpeakingDoneFunc returned before speakN reached zero")
+	case <-time.After(60 * time.Millisecond):
+	}
+
+	// Simulate StatusStopped arriving.
+	l.speakMu.Lock()
+	l.speakN--
+	l.speakCond.Broadcast()
+	l.speakMu.Unlock()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Error("WaitSpeakingDoneFunc did not unblock after speakN reached zero")
+	}
+}
+
+func TestWaitSpeakingDoneFunc_UnblocksWhenListenerClosed(t *testing.T) {
+	l := newTestListener("gemmai")
+	l.speakMu.Lock()
+	l.speakN = 1
+	l.speakMu.Unlock()
+
+	waitFn := l.WaitSpeakingDoneFunc()
+	done := make(chan struct{})
+	go func() {
+		waitFn()
+		close(done)
+	}()
+
+	// Must still be blocked initially.
+	select {
+	case <-done:
+		t.Fatal("WaitSpeakingDoneFunc returned before done channel closed")
+	case <-time.After(60 * time.Millisecond):
+	}
+
+	l.Close()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Error("WaitSpeakingDoneFunc did not unblock after listener closed")
 	}
 }

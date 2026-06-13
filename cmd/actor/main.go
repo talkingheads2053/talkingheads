@@ -157,9 +157,9 @@ func main() {
 				Value: float64(actor.DefaultDryMultiplier),
 			},
 			&cli.StringFlag{
-				Name:    "pause-words-file",
-				Usage:   "path to a file containing pause phrases, one per line (overrides built-in defaults)",
-				Aliases: []string{"pw"},
+				Name:    "thinking-phrases-file",
+				Usage:   "path to a file containing thinking phrases, one per line (overrides built-in defaults)",
+				Aliases: []string{"tp"},
 			},
 			&cli.StringFlag{
 				Name:    "actor-positions",
@@ -167,9 +167,9 @@ func main() {
 				Aliases: []string{"ap"},
 			},
 			&cli.IntFlag{
-				Name:  "pause-interval",
-				Usage: "seconds between repeated pause words while waiting for the model's first token (0 = use default)",
-				Value: actor.DefaultPauseInterval,
+				Name:  "thinking-interval",
+				Usage: "seconds between repeated thinking phrases while waiting for the model's first token (0 = use default)",
+				Value: actor.DefaultThinkingInterval,
 			},
 			&cli.IntFlag{
 				Name:  "max-sentences",
@@ -264,7 +264,7 @@ func run(c *cli.Context) error {
 
 	var moreFunc func(*[]message.Message)
 	var outputFunc func(string)
-	var pauseOutputFunc func(string)
+	var thinkingOutputFunc func(string)
 	var ml *actor.MQTTListener
 
 	cfg := actor.DefaultConfig()
@@ -283,16 +283,16 @@ func run(c *cli.Context) error {
 	cfg.FreqPenalty = float32(c.Float64("freq-penalty"))
 	cfg.PresencePenalty = float32(c.Float64("presence-penalty"))
 	cfg.DryMultiplier = float32(c.Float64("dry-multiplier"))
-	cfg.PauseInterval = c.Int("pause-interval")
+	cfg.ThinkingInterval = c.Int("thinking-interval")
 	cfg.MaxSentences = c.Int("max-sentences")
 	cfg.Verbose = verbose
 
-	if pwFile := c.String("pause-words-file"); pwFile != "" {
-		words, err := loadPauseWords(pwFile)
+	if pwFile := c.String("thinking-phrases-file"); pwFile != "" {
+		words, err := loadThinkingPhrases(pwFile)
 		if err != nil {
-			return cli.Exit(fmt.Sprintf("failed to load pause words file: %v", err), 1)
+			return cli.Exit(fmt.Sprintf("failed to load thinking phrases file: %v", err), 1)
 		}
-		cfg.PauseWords = words
+		cfg.ThinkingPhrases = words
 	}
 
 	eventsCh := make(chan string, 64)
@@ -321,10 +321,10 @@ func run(c *cli.Context) error {
 		}
 		moreFunc = ml.MoreFunc()
 		baseOutput := ml.OutputFunc()
-		basePauseOutput := ml.PauseOutputFunc()
-		pauseOutputFunc = func(content string) {
+		baseThinkingOutput := ml.ThinkingOutputFunc()
+		thinkingOutputFunc = func(content string) {
 			eventsCh <- content
-			basePauseOutput(content)
+			baseThinkingOutput(content)
 		}
 		outputFunc = func(content string) {
 			eventsCh <- content
@@ -362,7 +362,8 @@ func run(c *cli.Context) error {
 
 	if ml != nil {
 		ml.SetPreprocessCallback(a.PreprocessFunc(ctx))
-		a.SetPauseOutputFunc(pauseOutputFunc)
+		a.SetThinkingOutputFunc(thinkingOutputFunc)
+		a.SetSpeakingDoneFunc(ml.WaitSpeakingDoneFunc())
 	}
 
 	// Redirect log output: into the viewport when verbose, silenced otherwise.
@@ -432,13 +433,13 @@ func parseModelFormat(s string) message.Format {
 	}
 }
 
-// loadPauseWords reads a pause-phrases file and returns the phrases as a slice.
+// loadThinkingPhrases reads a thinking-phrases file and returns the phrases as a slice.
 // Each non-empty, non-comment line (lines not starting with '#') is a phrase.
 // Returns an error if the file cannot be read.
-func loadPauseWords(path string) ([]string, error) {
+func loadThinkingPhrases(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading pause words file %q: %w", path, err)
+		return nil, fmt.Errorf("reading thinking phrases file %q: %w", path, err)
 	}
 	var words []string
 	for _, line := range strings.Split(string(data), "\n") {

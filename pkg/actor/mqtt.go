@@ -31,6 +31,10 @@ type MQTTListener struct {
 	lastSpeaker    string
 	lastSpeakerMu  sync.RWMutex
 	actorPositions []string
+
+	speakMu   sync.Mutex
+	speakCond *sync.Cond
+	speakN    int // number of phrases issued but not yet StatusStopped
 }
 
 // SetEventsCh registers a channel that receives human-readable event strings
@@ -135,6 +139,7 @@ func NewMQTTListener(name, server string, commander Commander, verbose bool) (*M
 		done:      make(chan struct{}),
 		verbose:   verbose,
 	}
+	l.speakCond = sync.NewCond(&l.speakMu)
 
 	if err := subscribe(client, "direction/"+name, l.handleDirection); err != nil {
 		client.Disconnect(250)
@@ -219,6 +224,12 @@ func (l *MQTTListener) handleSpeakingStatus(_ mqtt.Client, msg mqtt.Message) {
 					log.Printf("failed to send stop command: %v\n", err)
 				}
 			}
+			l.speakMu.Lock()
+			if l.speakN > 0 {
+				l.speakN--
+			}
+			l.speakCond.Broadcast()
+			l.speakMu.Unlock()
 		}
 		return
 	}
@@ -402,10 +413,10 @@ func (l *MQTTListener) OutputFunc() func(string) {
 	return l.makeOutputFunc(false)
 }
 
-// PauseOutputFunc returns an outputFunc that publishes pause phrases to
+// ThinkingOutputFunc returns an outputFunc that publishes thinking phrases to
 // "speak/<name>" with Thinking set to true, signalling to other Actors that
 // the message is filler and should not be added to their conversation context.
-func (l *MQTTListener) PauseOutputFunc() func(string) {
+func (l *MQTTListener) ThinkingOutputFunc() func(string) {
 	return l.makeOutputFunc(true)
 }
 
@@ -426,14 +437,47 @@ func (l *MQTTListener) makeOutputFunc(thinking bool) func(string) {
 			return
 		}
 
+		// Count this phrase as in-flight before launching the goroutine so that
+		// WaitSpeakingDoneFunc callers see speakN > 0 before StatusStopped arrives.
+		l.speakMu.Lock()
+		l.speakN++
+		l.speakMu.Unlock()
+
 		topic := "speak/" + l.name
 		go func() {
 			token := l.client.Publish(topic, 0, false, payload)
 			token.Wait()
 			if token.Error() != nil {
 				log.Printf("failed to publish response to %s: %v\n", topic, token.Error())
+				// Publish failed — the dialogue system will never send StatusStopped,
+				// so decrement here to avoid blocking waiters indefinitely.
+				l.speakMu.Lock()
+				if l.speakN > 0 {
+					l.speakN--
+				}
+				l.speakCond.Broadcast()
+				l.speakMu.Unlock()
 			}
 		}()
+	}
+}
+
+// WaitSpeakingDoneFunc returns a function that blocks until all in-flight
+// phrases (issued via OutputFunc or ThinkingOutputFunc) have received a
+// StatusStopped acknowledgement from the dialogue system. It returns
+// immediately if the listener is closed.
+func (l *MQTTListener) WaitSpeakingDoneFunc() func() {
+	return func() {
+		l.speakMu.Lock()
+		defer l.speakMu.Unlock()
+		for l.speakN > 0 {
+			select {
+			case <-l.done:
+				return
+			default:
+			}
+			l.speakCond.Wait()
+		}
 	}
 }
 
@@ -442,7 +486,11 @@ func (l *MQTTListener) makeOutputFunc(thinking bool) func(string) {
 func (l *MQTTListener) Close() {
 	l.closeOnce.Do(func() {
 		close(l.done)
-		l.client.Disconnect(250)
+		// Wake any goroutines blocked in WaitSpeakingDoneFunc.
+		l.speakCond.Broadcast()
+		if l.client != nil {
+			l.client.Disconnect(250)
+		}
 	})
 }
 
