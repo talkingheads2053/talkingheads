@@ -641,7 +641,7 @@ func (a *Actor) runThinkingPhrases(done <-chan struct{}, next func() string) {
 		maxInterval = DefaultThinkingInterval
 	}
 	// half of maxInterval in milliseconds, used as the random base
-	halfMs := int64(maxInterval) * 500
+	halfMs := int64(maxInterval) * 250
 
 	// Say the first pause word immediately.
 	select {
