@@ -69,7 +69,15 @@ func NewActor(modelPath string, cfg Config, commander Commander, moreFunc func(c
 
 	modelParams := llama.ModelDefaultParams()
 	if !cfg.UseMmap {
-		modelParams.UseMmap = 0
+		// llama.cpp replaced the separate use_mmap/use_mlock booleans with a
+		// single load-mode enum, so clearing mmap means dropping to the
+		// equivalent mode that keeps any mlock setting intact.
+		switch modelParams.LoadMode {
+		case llama.LoadModeMmap:
+			modelParams.LoadMode = llama.LoadModeNone
+		case llama.LoadModeMmapMlock:
+			modelParams.LoadMode = llama.LoadModeMlock
+		}
 	}
 	mdl, err := llama.ModelLoadFromFile(modelPath, modelParams)
 	if err != nil {
