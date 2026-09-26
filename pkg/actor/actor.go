@@ -941,6 +941,7 @@ func stripActorMarkup(s string) string {
 	s = nonASCIIRE.ReplaceAllString(s, "")
 	s = orphanAngleRE.ReplaceAllString(s, "")
 	s = stageDirectionRE.ReplaceAllString(s, "")
+	s = dropUnmatchedParens(s)
 	// Replace newlines with spaces so that adjacent words separated only by a
 	// line break (e.g. after a stripped markdown bullet) don't get glued
 	// together when downstream code collapses or removes other whitespace.
@@ -968,6 +969,41 @@ func stripActorMarkup(s string) string {
 		}
 	}
 	return s
+}
+
+// dropUnmatchedParens removes '(' and ')' that have no partner, such as a
+// stray ')' the model writes at the end of a reply.
+func dropUnmatchedParens(s string) string {
+	if !strings.ContainsAny(s, "()") {
+		return s
+	}
+	drop := make(map[int]bool)
+	var open []int
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			open = append(open, i)
+		case ')':
+			if len(open) > 0 {
+				open = open[:len(open)-1]
+			} else {
+				drop[i] = true
+			}
+		}
+	}
+	for _, i := range open {
+		drop[i] = true
+	}
+	if len(drop) == 0 {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if !drop[i] {
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
 }
 
 // flushSentences calls fn for each complete sentence found in buf (delimited
