@@ -511,3 +511,65 @@ func TestRunThinkingPhrases_CallsSpeakingDoneFunc_AfterEachPhrase(t *testing.T) 
 		t.Errorf("expected speakingDoneFunc to be called once per emit; emits=%d, doneFunc calls=%d", e, d)
 	}
 }
+
+func TestSentenceStream_EmitsCompleteSentencesOnly(t *testing.T) {
+	var got []string
+	s := &sentenceStream{emit: func(v string) { got = append(got, v) }}
+	s.feed("Hello there")
+	s.feed("Hello there. How are")
+	if len(got) != 1 || got[0] != "Hello there." {
+		t.Fatalf("got %q, want [\"Hello there.\"]", got)
+	}
+	spoken := s.finish("Hello there. How are you")
+	if spoken != "Hello there. How are you" {
+		t.Errorf("spoken = %q", spoken)
+	}
+	if len(got) != 2 || got[1] != "How are you" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSentenceStream_StopsAtMax(t *testing.T) {
+	var got []string
+	s := &sentenceStream{emit: func(v string) { got = append(got, v) }, max: 2}
+	s.feed("One. Two! Three? ")
+	if !s.full() {
+		t.Fatal("expected stream to be full")
+	}
+	if spoken := s.finish("One. Two! Three? Four."); spoken != "One. Two!" {
+		t.Errorf("spoken = %q", spoken)
+	}
+	if len(got) != 2 {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSentenceStream_MarkupDefersToFinish(t *testing.T) {
+	var got []string
+	s := &sentenceStream{emit: func(v string) { got = append(got, v) }}
+	raw := "First. <tool_call>{\"name\":\"x\"}</tool_call> Second. "
+	s.feed(raw)
+	if len(got) != 0 {
+		t.Fatalf("expected nothing streamed, got %q", got)
+	}
+	s.finish(raw)
+	if len(got) == 0 || got[0] != "First." {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestLastSentenceEnd(t *testing.T) {
+	cases := map[string]int{
+		"":              -1,
+		"Hello.":        -1,
+		"Hello. ":       5,
+		"Pi is 3.14":    -1,
+		"A. B! C":       4,
+		"Wait...\nthen": 6,
+	}
+	for in, want := range cases {
+		if got := lastSentenceEnd(in); got != want {
+			t.Errorf("lastSentenceEnd(%q) = %d, want %d", in, got, want)
+		}
+	}
+}

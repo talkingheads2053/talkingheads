@@ -7,7 +7,7 @@ require (
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/eclipse/paho.mqtt.golang v1.4.3
 	github.com/gordonklaus/portaudio v0.0.0-20260203164431-765aa7dfa631
-	github.com/hybridgroup/yzma v1.22.0
+	github.com/hybridgroup/yzma v1.28.0
 	github.com/talkingheads2053/sayanything v0.0.0-20260528083745-2671dfdef6af
 	go.bug.st/serial v1.6.4
 	golang.org/x/term v0.45.0
@@ -49,7 +49,6 @@ require (
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/creack/goselect v0.1.2 // indirect
 	github.com/deadprogram/sam v0.0.0-20260501115511-7c6eedfba6c6 // indirect
 	github.com/ebitengine/oto/v3 v3.4.0 // indirect
@@ -76,12 +75,9 @@ require (
 	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
-	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.8.1 // indirect
 	github.com/tosone/minimp3 v1.0.1 // indirect
 	github.com/ulikunitz/xz v0.5.16 // indirect
-	github.com/urfave/cli/v2 v2.27.7 // indirect
-	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.45.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0 // indirect

@@ -26,18 +26,9 @@ type Actor struct {
 	sampler      llama.Sampler
 	chatTemplate string
 
-	// nCachedPrompt is the number of prompt tokens currently held in the KV /
-	// recurrent cache from the previous turn. It is used to implement
-	// incremental decoding: only tokens beyond this offset need to be decoded
-	// each turn, saving the cost of re-decoding the entire conversation history.
-	nCachedPrompt int
-
-	// nSystemPromptTokens is the number of tokens occupied by the system prompt
-	// alone (rendered via the chat template with no user turns). These tokens are
-	// decoded once during warm-up and never need to be re-decoded as long as the
-	// system prompt doesn't change. When context trimming forces a full KV cache
-	// clear, only the tokens *beyond* this prefix need decoding on the next turn.
-	nSystemPromptTokens int
+	// cachedTokens are the prompt tokens held in the KV cache from the last decode.
+	// Each turn only decodes what comes after the prefix shared with them.
+	cachedTokens []llama.Token
 
 	moreConversationFunc func(conversation *[]message.Message)
 	outputFunc           func(content string)
@@ -221,11 +212,8 @@ func coalesceSameRole(conv []message.Message) []message.Message {
 	return out
 }
 
-// warmUpSystemPrompt tokenizes the system prompt by itself, decodes it into
-// the KV cache, and records the token count in nSystemPromptTokens /
-// nCachedPrompt. Subsequent turns then start decoding from that offset,
-// skipping the most expensive part of the prompt on every turn.
-// sysContent must be the final system message content (tools already injected).
+// warmUpSystemPrompt decodes the system prompt into the KV cache so later turns
+// reuse it. sysContent must be the final system message content.
 func (a *Actor) warmUpSystemPrompt(ctx context.Context, sysContent string) error {
 	// Many chat templates (e.g. Qwen, ChatML) require at least one user message
 	// to render successfully. Use an empty-content user placeholder so the
@@ -275,155 +263,101 @@ func (a *Actor) warmUpSystemPrompt(ctx context.Context, sysContent string) error
 		return nil
 	}
 
-	mem, err := llama.GetMemory(a.llamaCtx)
-	if err != nil {
-		return fmt.Errorf("error getting memory for warm-up: %w", err)
-	}
-	if clearErr := llama.MemoryClear(mem, true); clearErr != nil {
-		return fmt.Errorf("error clearing memory for warm-up: %w", clearErr)
-	}
-
-	nBatch := int(llama.NBatch(a.llamaCtx))
-	if nBatch <= 0 {
-		nBatch = 512
-	}
-
-	t0 := time.Now()
+	a.cachedTokens = nil
 	if a.cfg.Verbose {
-		log.Printf("[verbose] warm-up: decoding %d system prompt tokens, batch size %d", len(tokens), nBatch)
+		log.Printf("[verbose] warm-up: decoding %d system prompt tokens", len(tokens))
 	}
-	for i := 0; i < len(tokens); i += nBatch {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		end := i + nBatch
-		if end > len(tokens) {
-			end = len(tokens)
-		}
-		if _, err := llama.Decode(a.llamaCtx, llama.BatchGetOne(tokens[i:end])); err != nil {
-			return fmt.Errorf("error decoding system prompt during warm-up: %w", err)
-		}
-	}
-	if a.cfg.Verbose {
-		log.Printf("[verbose] warm-up done: %v", time.Since(t0))
-	}
-
-	a.nSystemPromptTokens = len(tokens)
-	a.nCachedPrompt = len(tokens)
-	return nil
+	return a.syncCache(ctx, tokens)
 }
 
-// preDecodeConversation renders the conversation, tokenizes it, and decodes
-// the new tokens into the KV cache without sampling any output. It uses the
-// same three-case incremental-decode logic as generateTurn so that subsequent
-// calls to generateTurn only need to decode the delta (typically a single
-// Direction message) rather than the full accumulated context.
-//
-// The prompt is rendered with addAssistant=false because no generation is
-// requested; generateTurn will append the assistant-turn opener when it runs.
-// Since both renders share the same token prefix, Case 1 of the cache logic
-// applies and generateTurn only decodes the Direction tokens on top.
+// preDecodeConversation decodes the conversation into the KV cache without
+// sampling, so generateTurn only has to decode the Direction on top.
 func (a *Actor) preDecodeConversation(ctx context.Context, conversation *[]message.Message) error {
-	tmplOpts := template.Options{EnableThinking: a.cfg.EnableThinking}
-	renderConv := prepareConversationForTemplate(*conversation, a.cfg.ModelFormat)
-	prompt, err := template.ApplyWithOptions(a.chatTemplate, renderConv, false, tmplOpts)
+	tokens, err := a.renderTokens(conversation, false)
 	if err != nil {
-		return fmt.Errorf("error applying chat template: %w", err)
+		return err
 	}
+	return a.syncCache(ctx, tokens)
+}
 
-	tokens := llama.Tokenize(a.vocab, prompt, true, true)
-
-	// Trim oldest non-system messages if the prompt exceeds the context window.
-	if nCtx := int(llama.NCtx(a.llamaCtx)); nCtx > 0 {
-		maxPromptTokens := nCtx - a.cfg.MaxTokens
-		for len(tokens) > maxPromptTokens && len(*conversation) > 2 {
-			if a.cfg.Verbose {
-				log.Println("trimming oldest message from conversation to fit context window")
-			}
-			*conversation = append((*conversation)[:1], (*conversation)[2:]...)
-			renderConv = prepareConversationForTemplate(*conversation, a.cfg.ModelFormat)
-			prompt, err = template.ApplyWithOptions(a.chatTemplate, renderConv, false, tmplOpts)
-			if err != nil {
-				return fmt.Errorf("error applying chat template after trim: %w", err)
-			}
-			tokens = llama.Tokenize(a.vocab, prompt, true, false)
+// renderTokens applies the chat template and tokenizes the result. It drops the
+// oldest non-system messages until the prompt leaves room for MaxTokens.
+func (a *Actor) renderTokens(conversation *[]message.Message, addAssistant bool) ([]llama.Token, error) {
+	tmplOpts := template.Options{EnableThinking: a.cfg.EnableThinking}
+	maxPromptTokens := int(llama.NCtx(a.llamaCtx)) - a.cfg.MaxTokens
+	for {
+		renderConv := prepareConversationForTemplate(*conversation, a.cfg.ModelFormat)
+		prompt, err := template.ApplyWithOptions(a.chatTemplate, renderConv, addAssistant, tmplOpts)
+		if err != nil {
+			return nil, fmt.Errorf("error applying chat template: %w", err)
 		}
+		tokens := llama.Tokenize(a.vocab, prompt, true, true)
+		if maxPromptTokens <= 0 || len(tokens) <= maxPromptTokens || len(*conversation) <= 2 {
+			return tokens, nil
+		}
+		if a.cfg.Verbose {
+			log.Println("trimming oldest message from conversation to fit context window")
+		}
+		*conversation = append((*conversation)[:1], (*conversation)[2:]...)
 	}
+}
 
+// syncCache keeps the part of the KV cache shared with tokens and decodes the rest.
+// The last token is always decoded so its logits are ready for sampling.
+func (a *Actor) syncCache(ctx context.Context, tokens []llama.Token) error {
 	mem, err := llama.GetMemory(a.llamaCtx)
 	if err != nil {
 		return fmt.Errorf("error getting memory: %w", err)
 	}
 
-	var decodeFrom int
+	keep := commonPrefix(a.cachedTokens, tokens)
+	if keep >= len(tokens) {
+		keep = len(tokens) - 1
+	}
 	t0 := time.Now()
-	if a.nCachedPrompt > 0 && len(tokens) >= a.nCachedPrompt {
-		if ok, rmErr := llama.MemorySeqRm(mem, 0, llama.Pos(a.nCachedPrompt), -1); ok && rmErr == nil {
-			decodeFrom = a.nCachedPrompt
-			if a.cfg.Verbose {
-				log.Printf("[verbose] preprocess cache trim: kept %d cached tokens, removed tail (%v)", a.nCachedPrompt, time.Since(t0))
-			}
-		} else {
-			if clearErr := llama.MemoryClear(mem, true); clearErr != nil {
-				return fmt.Errorf("error clearing memory: %w", clearErr)
-			}
-			a.nCachedPrompt = 0
-			if a.cfg.Verbose {
-				log.Printf("[verbose] preprocess cache trim failed, full clear (%v)", time.Since(t0))
-			}
-		}
-	} else if a.nCachedPrompt > 0 && a.nSystemPromptTokens > 0 && len(tokens) >= a.nSystemPromptTokens {
-		if ok, rmErr := llama.MemorySeqRm(mem, 0, llama.Pos(a.nSystemPromptTokens), -1); ok && rmErr == nil {
-			decodeFrom = a.nSystemPromptTokens
-			a.nCachedPrompt = a.nSystemPromptTokens
-			if a.cfg.Verbose {
-				log.Printf("[verbose] preprocess cache trim (shrink): restored to system prefix (%d tokens) (%v)", a.nSystemPromptTokens, time.Since(t0))
-			}
-		} else {
-			if clearErr := llama.MemoryClear(mem, true); clearErr != nil {
-				return fmt.Errorf("error clearing memory: %w", clearErr)
-			}
-			a.nCachedPrompt = 0
-			if a.cfg.Verbose {
-				log.Printf("[verbose] preprocess cache trim failed (shrink), full clear (%v)", time.Since(t0))
-			}
-		}
-	} else {
-		if clearErr := llama.MemoryClear(mem, true); clearErr != nil {
-			return fmt.Errorf("error clearing memory: %w", clearErr)
-		}
-		a.nCachedPrompt = 0
-		if a.cfg.Verbose {
-			log.Printf("[verbose] preprocess memory clear: %v", time.Since(t0))
+	if keep > 0 {
+		if ok, rmErr := llama.MemorySeqRm(mem, 0, llama.Pos(keep), -1); !ok || rmErr != nil {
+			keep = 0
 		}
 	}
+	if keep <= 0 {
+		keep = 0
+		if err := llama.MemoryClear(mem, true); err != nil {
+			return fmt.Errorf("error clearing memory: %w", err)
+		}
+	}
+	a.cachedTokens = nil
 
 	nBatch := int(llama.NBatch(a.llamaCtx))
 	if nBatch <= 0 {
 		nBatch = 512
 	}
 	if a.cfg.Verbose {
-		log.Printf("[verbose] preprocess: decoding %d new tokens (of %d total)", len(tokens)-decodeFrom, len(tokens))
+		log.Printf("[verbose] cache: kept %d tokens, decoding %d, batch size %d", keep, len(tokens)-keep, nBatch)
 	}
-	for i := decodeFrom; i < len(tokens); i += nBatch {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+	for i := keep; i < len(tokens); i += nBatch {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		end := i + nBatch
-		if end > len(tokens) {
-			end = len(tokens)
-		}
+		end := min(i+nBatch, len(tokens))
 		if _, err := llama.Decode(a.llamaCtx, llama.BatchGetOne(tokens[i:end])); err != nil {
-			return fmt.Errorf("error pre-decoding conversation: %w", err)
+			return fmt.Errorf("error decoding prompt: %w", err)
 		}
+	}
+	if a.cfg.Verbose {
+		log.Printf("[verbose] prompt decode done: %v", time.Since(t0))
 	}
 
-	a.nCachedPrompt = len(tokens)
+	a.cachedTokens = tokens
 	return nil
+}
+
+func commonPrefix(a, b []llama.Token) int {
+	n := 0
+	for n < len(a) && n < len(b) && a[n] == b[n] {
+		n++
+	}
+	return n
 }
 
 // PreprocessFunc returns a callback suitable for use as a preprocessing hook
@@ -697,130 +631,19 @@ func (a *Actor) GetMore(conversation *[]message.Message) bool {
 // The conversation pointer may be updated to trim old messages if the prompt
 // exceeds the model's context window.
 func (a *Actor) generateTurn(ctx context.Context, conversation *[]message.Message, stopPausing func()) (string, bool, []message.ToolCall, error) {
-	tmplOpts := template.Options{EnableThinking: a.cfg.EnableThinking}
-	renderConv := prepareConversationForTemplate(*conversation, a.cfg.ModelFormat)
-	prompt, err := template.ApplyWithOptions(a.chatTemplate, renderConv, true, tmplOpts)
-	if err != nil {
-		return "", false, nil, fmt.Errorf("error applying chat template: %w", err)
-	}
-
 	llama.SamplerReset(a.sampler)
 
-	tokens := llama.Tokenize(a.vocab, prompt, true, true)
-
-	// Trim oldest non-system messages if the prompt exceeds the context window.
-	if nCtx := int(llama.NCtx(a.llamaCtx)); nCtx > 0 {
-		maxPromptTokens := nCtx - a.cfg.MaxTokens
-		for len(tokens) > maxPromptTokens && len(*conversation) > 2 {
-			// Drop the second message (oldest non-system entry) and re-tokenize.
-			if a.cfg.Verbose {
-				log.Println("trimming oldest message from conversation to fit context window")
-			}
-			*conversation = append((*conversation)[:1], (*conversation)[2:]...)
-			renderConv = prepareConversationForTemplate(*conversation, a.cfg.ModelFormat)
-			prompt, err = template.ApplyWithOptions(a.chatTemplate, renderConv, true, tmplOpts)
-			if err != nil {
-				return "", false, nil, fmt.Errorf("error applying chat template after trim: %w", err)
-			}
-			tokens = llama.Tokenize(a.vocab, prompt, true, false)
-		}
-	}
-
-	mem, err := llama.GetMemory(a.llamaCtx)
+	tokens, err := a.renderTokens(conversation, true)
 	if err != nil {
-		return "", false, nil, fmt.Errorf("error getting memory: %w", err)
+		return "", false, nil, err
+	}
+	if err := a.syncCache(ctx, tokens); err != nil {
+		return "", false, nil, err
 	}
 
-	// Incremental decode: reuse the cached prompt prefix from the previous turn
-	// and only decode the tokens added since then. This avoids re-decoding the
-	// entire conversation history on every turn (the main source of latency on
-	// slow hardware).
-	//
-	// Three cases:
-	//   1. New prompt extends the cached prefix — trim only the generated tail
-	//      (nCachedPrompt..∞) and decode the new tokens from nCachedPrompt.
-	//   2. New prompt is shorter (context trimming dropped old messages) but
-	//      still covers the system-prompt prefix — restore from nSystemPromptTokens.
-	//   3. Neither of the above — full KV clear; re-decode from nSystemPromptTokens
-	//      if the system prompt was pre-cached, otherwise from 0.
-	var decodeFrom int
-	t0 := time.Now()
-	if a.nCachedPrompt > 0 && len(tokens) >= a.nCachedPrompt {
-		// Case 1: prompt grew — trim the generated tail and decode the delta.
-		if ok, rmErr := llama.MemorySeqRm(mem, 0, llama.Pos(a.nCachedPrompt), -1); ok && rmErr == nil {
-			decodeFrom = a.nCachedPrompt
-			if a.cfg.Verbose {
-				log.Printf("[verbose] cache trim: kept %d cached tokens, removed tail (%v)", a.nCachedPrompt, time.Since(t0))
-			}
-		} else {
-			// MemorySeqRm failed (recurrent/hybrid model): full clear, but
-			// re-use the system-prompt prefix if it was pre-decoded.
-			if clearErr := llama.MemoryClear(mem, true); clearErr != nil {
-				return "", false, nil, fmt.Errorf("error clearing memory: %w", clearErr)
-			}
-			a.nCachedPrompt = 0
-			if a.cfg.Verbose {
-				log.Printf("[verbose] cache trim failed, full clear (%v)", time.Since(t0))
-			}
-		}
-	} else if a.nCachedPrompt > 0 && a.nSystemPromptTokens > 0 && len(tokens) >= a.nSystemPromptTokens {
-		// Case 2: prompt shrank (context trim dropped messages) but the
-		// system-prompt prefix is still valid. Discard everything after the
-		// system prompt and re-decode from there.
-		if ok, rmErr := llama.MemorySeqRm(mem, 0, llama.Pos(a.nSystemPromptTokens), -1); ok && rmErr == nil {
-			decodeFrom = a.nSystemPromptTokens
-			a.nCachedPrompt = a.nSystemPromptTokens
-			if a.cfg.Verbose {
-				log.Printf("[verbose] cache trim (shrink): restored to system prefix (%d tokens) (%v)", a.nSystemPromptTokens, time.Since(t0))
-			}
-		} else {
-			// MemorySeqRm failed: full clear.
-			if clearErr := llama.MemoryClear(mem, true); clearErr != nil {
-				return "", false, nil, fmt.Errorf("error clearing memory: %w", clearErr)
-			}
-			a.nCachedPrompt = 0
-			if a.cfg.Verbose {
-				log.Printf("[verbose] cache trim failed (shrink), full clear (%v)", time.Since(t0))
-			}
-		}
-	} else {
-		// Case 3: full clear. If the system prompt was pre-decoded (warm-up ran
-		// successfully) and the new prompt is long enough, restore it into the
-		// cache by decoding only the system-prompt tokens before continuing.
-		if clearErr := llama.MemoryClear(mem, true); clearErr != nil {
-			return "", false, nil, fmt.Errorf("error clearing memory: %w", clearErr)
-		}
-		a.nCachedPrompt = 0
-		if a.cfg.Verbose {
-			log.Printf("[verbose] memory clear: %v", time.Since(t0))
-		}
-	}
-
-	nBatch := int(llama.NBatch(a.llamaCtx))
-	if nBatch <= 0 {
-		nBatch = 512
-	}
-	if a.cfg.Verbose {
-		log.Printf("[verbose] prompt decode: %d new tokens (of %d total), batch size %d", len(tokens)-decodeFrom, len(tokens), nBatch)
-	}
-	t1 := time.Now()
-	for i := decodeFrom; i < len(tokens); i += nBatch {
-		end := i + nBatch
-		if end > len(tokens) {
-			end = len(tokens)
-		}
-		if _, err := llama.Decode(a.llamaCtx, llama.BatchGetOne(tokens[i:end])); err != nil {
-			return "", false, nil, fmt.Errorf("error decoding prompt: %w", err)
-		}
-	}
-	if a.cfg.Verbose {
-		log.Printf("[verbose] prompt decode done: %v", time.Since(t1))
-	}
-
-	a.nCachedPrompt = len(tokens)
-
-	var chunks []string
+	var buf strings.Builder
 	pieceBuf := make([]byte, 128)
+	stream := &sentenceStream{emit: a.outputFunc, max: a.cfg.MaxSentences}
 
 	generationStopMarkers := message.StopMarkers(a.vocab, a.cfg.ModelFormat)
 
@@ -846,13 +669,13 @@ generateLoop:
 
 		n := llama.TokenToPiece(a.vocab, token, pieceBuf, 0, true)
 		if n > 0 {
-			piece := string(pieceBuf[:n])
-			chunks = append(chunks, piece)
+			buf.Write(pieceBuf[:n])
 
-			full := strings.Join(chunks, "")
+			full := buf.String()
 			for _, marker := range generationStopMarkers {
 				if idx := strings.Index(full, marker); idx >= 0 {
-					chunks = []string{full[:idx]}
+					buf.Reset()
+					buf.WriteString(full[:idx])
 					break generateLoop
 				}
 			}
@@ -871,6 +694,11 @@ generateLoop:
 				log.Printf("stopping generation: accumulated %d tool call blocks", toolCallCount)
 				break generateLoop
 			}
+
+			stream.feed(full)
+			if stream.full() {
+				break generateLoop
+			}
 		}
 
 		if _, err := llama.Decode(a.llamaCtx, llama.BatchGetOne([]llama.Token{token})); err != nil {
@@ -884,45 +712,97 @@ generateLoop:
 		log.Printf("[verbose] generation: %d tokens in %v (%.2f t/s)", tokenCount, elapsed, tps)
 	}
 
-	text := strings.TrimSpace(strings.TrimLeft(strings.Join(chunks, ""), "\n"))
-
-	// Strip <think> / </think> tags before any further processing. Qwen3 with
-	// no_think still emits </think> after function blocks, which confuses
-	// StripMarkup: its orphaned-</think> handler strips everything before the
-	// first </think> (including the text preceding the first function call).
-	text = strings.ReplaceAll(text, "<think>", "")
-	text = strings.ReplaceAll(text, "</think>", "")
-	text = strings.TrimSpace(text)
-
+	text := stripThinkTags(buf.String())
 	if a.cfg.Verbose {
 		log.Printf("raw generation: %q", text)
 	}
 
-	toolCalls := message.ParseToolCalls(text)
-	if len(toolCalls) > 0 {
-		var hadText bool
-		var spokenText string
-		if spokenText = stripActorMarkup(text); spokenText != "" && a.outputFunc != nil {
-			spokenText = truncateToSentences(spokenText, a.cfg.MaxSentences)
-			remaining := flushSentences(spokenText, a.outputFunc)
-			if remaining != "" {
-				a.outputFunc(remaining)
+	spoken := stream.finish(buf.String())
+	hadText := spoken != "" && a.outputFunc != nil
+	if toolCalls := message.ParseToolCalls(text); len(toolCalls) > 0 {
+		return spoken, hadText, toolCalls, nil
+	}
+	return spoken, false, nil, nil
+}
+
+// stripThinkTags removes <think> and </think>. Qwen3 with no_think still emits
+// </think> after function blocks, which makes StripMarkup drop the text before it.
+func stripThinkTags(s string) string {
+	s = strings.ReplaceAll(s, "<think>", "")
+	s = strings.ReplaceAll(s, "</think>", "")
+	return strings.TrimSpace(s)
+}
+
+// sentenceStream speaks sentences while the model is still generating. It stops
+// streaming once markup shows up and leaves the rest to finish.
+type sentenceStream struct {
+	emit    func(string)
+	max     int
+	count   int
+	pos     int
+	stopped bool
+	spoken  []string
+}
+
+// feed speaks the complete sentences in raw that have not been spoken yet.
+func (s *sentenceStream) feed(raw string) {
+	if s.stopped || s.full() {
+		return
+	}
+	pending := raw[s.pos:]
+	if strings.ContainsAny(pending, "<{[(*`") || strings.Contains(pending, "call:") {
+		s.stopped = true
+		return
+	}
+	if end := lastSentenceEnd(pending); end >= 0 {
+		s.say(pending[:end+1])
+		s.pos += end + 1
+	}
+}
+
+// finish speaks what is left in raw and returns everything spoken this turn.
+func (s *sentenceStream) finish(raw string) string {
+	if s.pos < len(raw) {
+		s.say(stripThinkTags(raw[s.pos:]))
+		s.pos = len(raw)
+	}
+	return strings.Join(s.spoken, " ")
+}
+
+func (s *sentenceStream) say(segment string) {
+	if rest := flushSentences(stripActorMarkup(segment), s.add); rest != "" {
+		s.add(rest)
+	}
+}
+
+func (s *sentenceStream) add(sentence string) {
+	if s.full() {
+		return
+	}
+	s.count++
+	s.spoken = append(s.spoken, sentence)
+	if s.emit != nil {
+		s.emit(sentence)
+	}
+}
+
+func (s *sentenceStream) full() bool {
+	return s.max > 0 && s.count >= s.max
+}
+
+// lastSentenceEnd returns the index of the last '.', '!' or '?' in s that is
+// followed by whitespace, or -1.
+func lastSentenceEnd(s string) int {
+	for i := len(s) - 2; i >= 0; i-- {
+		switch s[i] {
+		case '.', '!', '?':
+			switch s[i+1] {
+			case ' ', '\n', '\t':
+				return i
 			}
-			hadText = true
-		}
-		return spokenText, hadText, toolCalls, nil
-	}
-
-	content := stripActorMarkup(text)
-	if content != "" && a.outputFunc != nil {
-		content = truncateToSentences(content, a.cfg.MaxSentences)
-		remaining := flushSentences(content, a.outputFunc)
-		if remaining != "" {
-			a.outputFunc(remaining)
 		}
 	}
-
-	return content, false, nil, nil
+	return -1
 }
 
 // appendToolCalls adds the assistant's tool call request to the conversation.
