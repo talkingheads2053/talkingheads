@@ -573,3 +573,17 @@ func TestLastSentenceEnd(t *testing.T) {
 		}
 	}
 }
+
+func TestStripActorMarkup_UnmatchedParens(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"within Berlin today.)", "within Berlin today."},
+		{"(Hello there", "Hello there"},
+		{"I counted (five) of them.", "I counted (five) of them."},
+		{"Done.) Next (one)", "Done. Next (one)"},
+	}
+	for _, c := range cases {
+		if got := stripActorMarkup(c.in); got != c.want {
+			t.Errorf("stripActorMarkup(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
