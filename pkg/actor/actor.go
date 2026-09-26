@@ -703,8 +703,11 @@ generateLoop:
 		}
 
 		if _, err := llama.Decode(a.llamaCtx, llama.BatchGetOne([]llama.Token{token})); err != nil {
+			a.cachedTokens = nil
 			break
 		}
+		// Keep generated tokens cached so the next turn reuses this reply.
+		a.cachedTokens = append(a.cachedTokens, token)
 	}
 
 	if a.cfg.Verbose {
