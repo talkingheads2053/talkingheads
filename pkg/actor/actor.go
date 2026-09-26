@@ -56,6 +56,7 @@ func NewActor(modelPath string, cfg Config, commander Commander, moreFunc func(c
 	}
 	llama.Init()
 
+	log.Printf("llama.cpp %s", llama.Version())
 	log.Println("loading model...")
 
 	modelParams := llama.ModelDefaultParams()
