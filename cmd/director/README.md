@@ -79,7 +79,7 @@ Because the hotmic key is a function key rather than a printable character, both
 
 The spoken actor name is matched using three strategies in order:
 
-1. **Exact match** after normalisation (lowercase, alphanumeric only).
+1. **Exact match** after normalisation (lowercase, letters and digits only, hiragana turned into katakana).
 2. **Substring containment** — handles e.g. "lama" → `llama3000`.
 3. **Fuzzy edit-distance** — accepts the closest actor when the Levenshtein distance is within `--hotmic-fuzzy-threshold` of the longer name.
 
@@ -88,6 +88,19 @@ The spoken actor name is matched using three strategies in order:
 ```sh
 --hotmic-actor-alias "gemmai:jami|jamai|jenna|jedi"
 ```
+
+### Japanese
+
+Use `--hotmic-lang ja` with a multilingual whisper model such as `ggml-small.bin`, and add katakana aliases for each actor:
+
+```sh
+--hotmic-lang ja \
+--hotmic-actor-alias "gemmai:ジェマイ|ジェマ" \
+--hotmic-actor-alias "phineas:フィニアス" \
+--hotmic-actor-alias "qwentin:クエンティン"
+```
+
+The name can be followed by `、` or by nothing at all, as in `ジェマイ自己紹介してください`. A trailing さん, くん, ちゃん, or 様 is dropped.
 
 Press **Ctrl+C** to exit.
 
