@@ -885,3 +885,16 @@ func TestWaitSpeakingDoneFunc_UnblocksWhenListenerClosed(t *testing.T) {
 		t.Error("WaitSpeakingDoneFunc did not unblock after listener closed")
 	}
 }
+
+func TestRemoveEmoji(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"great job 👍", "great job "},
+		{"こんにちは、世界！🎉", "こんにちは、世界！"},
+		{"漢字とカタカナ", "漢字とカタカナ"},
+	}
+	for _, c := range cases {
+		if got := removeEmoji(c.in); got != c.want {
+			t.Errorf("removeEmoji(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
