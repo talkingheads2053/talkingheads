@@ -8,7 +8,7 @@ require (
 	github.com/eclipse/paho.mqtt.golang v1.4.3
 	github.com/gordonklaus/portaudio v0.0.0-20260203164431-765aa7dfa631
 	github.com/hybridgroup/yzma v1.28.1-0.20260926062451-22c9a9671760
-	github.com/talkingheads2053/sayanything v0.0.0-20260528083745-2671dfdef6af
+	github.com/talkingheads2053/sayanything v0.1.0
 	go.bug.st/serial v1.6.4
 	golang.org/x/term v0.45.0
 )
@@ -71,7 +71,8 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-getter v1.8.6 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
-	github.com/jupiterrider/ffi v0.7.0 // indirect
+	github.com/hybridgroup/voicevox v0.1.1 // indirect
+	github.com/jupiterrider/ffi v0.8.0 // indirect
 	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
