@@ -37,7 +37,7 @@ func main() {
 					},
 					&cli.StringSliceFlag{
 						Name:     "voice",
-						Usage:    "voice specification in name:lang:model format, repeatable",
+						Usage:    "voice specification in name:lang:model format, or name:voicevox:<style id>, repeatable",
 						Required: true,
 						Aliases:  []string{"v"},
 					},
@@ -46,6 +46,11 @@ func main() {
 						Usage:   "data directory containing voice model files",
 						Value:   "./voices",
 						Aliases: []string{"d"},
+					},
+					&cli.StringFlag{
+						Name:  "voicevox-data",
+						Usage: "VOICEVOX runtime directory created by the VOICEVOX downloader",
+						Value: "./voicevox_core",
 					},
 					&cli.BoolFlag{
 						Name:  "gpu",
@@ -66,13 +71,13 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:     "lang",
-						Usage:    "language code (e.g. en_US)",
+						Usage:    "language code (e.g. en_US), or voicevox",
 						Required: true,
 						Aliases:  []string{"l"},
 					},
 					&cli.StringFlag{
 						Name:     "voice",
-						Usage:    "voice model name",
+						Usage:    "voice model name, or style id for voicevox",
 						Required: true,
 						Aliases:  []string{"v"},
 					},
@@ -81,6 +86,11 @@ func main() {
 						Usage:   "data directory containing voice model files",
 						Value:   "./voices",
 						Aliases: []string{"d"},
+					},
+					&cli.StringFlag{
+						Name:  "voicevox-data",
+						Usage: "VOICEVOX runtime directory created by the VOICEVOX downloader",
+						Value: "./voicevox_core",
 					},
 					&cli.StringFlag{
 						Name:     "say",
@@ -110,7 +120,6 @@ func main() {
 
 func serveAction(c *cli.Context) error {
 	server := c.String("server")
-	dataDir := c.String("data")
 	gpu := c.Bool("gpu")
 	verbose := c.Bool("verbose")
 
@@ -122,7 +131,7 @@ func serveAction(c *cli.Context) error {
 			return cli.Exit(fmt.Sprintf("invalid voice format %q: expected name:lang:model", spec), 1)
 		}
 		name, lang, model := parts[0], parts[1], parts[2]
-		v, err := dialogue.NewVoice(name, lang, model, dataDir, gpu)
+		v, err := dialogue.NewVoice(name, lang, model, voiceDataDir(c, lang), gpu)
 		if err != nil {
 			return cli.Exit(fmt.Sprintf("failed to create voice %q: %v", name, err), 1)
 		}
@@ -163,14 +172,20 @@ func sayAction(c *cli.Context) error {
 	name := c.String("name")
 	lang := c.String("lang")
 	model := c.String("voice")
-	dataDir := c.String("data")
 	gpu := c.Bool("gpu")
 	text := c.String("say")
 
-	v, err := dialogue.NewVoice(name, lang, model, dataDir, gpu)
+	v, err := dialogue.NewVoice(name, lang, model, voiceDataDir(c, lang), gpu)
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("failed to create voice: %v", err), 1)
 	}
 
 	return v.SayOnce(text)
+}
+
+func voiceDataDir(c *cli.Context, lang string) string {
+	if lang == dialogue.Voicevox {
+		return c.String("voicevox-data")
+	}
+	return c.String("data")
 }

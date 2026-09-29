@@ -141,12 +141,14 @@ github.com/hashicorp/go-getter v1.8.6 h1:9sQboWULaydVphxc4S64oAI4YqpuCk7nPmvbk13
 github.com/hashicorp/go-getter v1.8.6/go.mod h1:nVH12eOV2P58dIiL3rsU6Fh3wLeJEKBOJzhMmzlSWoo=
 github.com/hashicorp/go-version v1.9.0 h1:CeOIz6k+LoN3qX9Z0tyQrPtiB1DFYRPfCIBtaXPSCnA=
 github.com/hashicorp/go-version v1.9.0/go.mod h1:fltr4n8CU8Ke44wwGCBoEymUuxUHl09ZGVZPK5anwXA=
+github.com/hybridgroup/voicevox v0.1.1 h1:VwkX4L3OI54i2Hz4AxDCGcEX1gPGaSVSgVxD6tEMOe0=
+github.com/hybridgroup/voicevox v0.1.1/go.mod h1:qEUmmZL1bMzlUBwX0zfX950zAcyRy+vCCTNVGviIQZY=
 github.com/hybridgroup/yzma v1.28.1-0.20260926062451-22c9a9671760 h1:Qw9twK6LskJv5+DEAUzaT0DihkdMTPCN91RrZ31AxWg=
 github.com/hybridgroup/yzma v1.28.1-0.20260926062451-22c9a9671760/go.mod h1:wAMtNTjSnE79jTWzaeFSsuraam0TXKCPajMHA5s+OX8=
 github.com/icza/bitio v1.1.0 h1:ysX4vtldjdi3Ygai5m1cWy4oLkhWTAi+SyO6HC8L9T0=
 github.com/icza/bitio v1.1.0/go.mod h1:0jGnlLAx8MKMr9VGnn/4YrvZiprkvBelsVIbA9Jjr9A=
-github.com/jupiterrider/ffi v0.7.0 h1:RKsl6Ascal+3kyAqR5Qcbp83LceQMLc1VZbPfHWoNzs=
-github.com/jupiterrider/ffi v0.7.0/go.mod h1:9dauhpOfNqrqk28fxuu0kkdeFtT9Qr4vbfigiuIXN7c=
+github.com/jupiterrider/ffi v0.8.0 h1:IH6lto8OZaRIulQYObtZibII4tq71hXT6Z+KLBcxCcQ=
+github.com/jupiterrider/ffi v0.8.0/go.mod h1:9dauhpOfNqrqk28fxuu0kkdeFtT9Qr4vbfigiuIXN7c=
 github.com/klauspost/compress v1.19.1 h1:VsB4HPswih7mmZ8WleSFQ75c/Ui1M4trX5oAsJnhSlk=
 github.com/klauspost/compress v1.19.1/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/mewkiz/flac v1.0.13 h1:6wF8rRQKBFW159Daqx6Ro7K5ZnlVhHUKfS5aTsC4oXs=
@@ -165,8 +167,8 @@ github.com/spiffe/go-spiffe/v2 v2.8.1 h1:eXZMLsu+3MLEPJyGJkolqtVrteZfQdUpOWj6LTi
 github.com/spiffe/go-spiffe/v2 v2.8.1/go.mod h1:47Q0Q9/AqGha8QLHp+kxpH4Wca7X7EnOtlIJy3mxZ3U=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/talkingheads2053/sayanything v0.0.0-20260528083745-2671dfdef6af h1:EjgEQ/VBQWf7XflbWq1Q824UnmJD6h9/XpJO4WCXwYg=
-github.com/talkingheads2053/sayanything v0.0.0-20260528083745-2671dfdef6af/go.mod h1:RBEd9EfzObFAGEVnJO2znRls3wOodSEbwrEVH0J05FU=
+github.com/talkingheads2053/sayanything v0.1.0 h1:yQD9x2dkjWfMNB10lmDMPxPn12aBo47O7u1TsiygFVc=
+github.com/talkingheads2053/sayanything v0.1.0/go.mod h1:/wT0tNClFsmTyJhRlVUL2mqQ3jbF5B1yC1vtlPTuWKg=
 github.com/tosone/minimp3 v1.0.1 h1:5ajMIgZKlQqJdX3KJj/wb0o1oNef9S3fuLr9T5YwQqw=
 github.com/tosone/minimp3 v1.0.1/go.mod h1:WFso0UvZL1fPit45V6RQPKxbehLI4XZaJyLs2/TJHoU=
 github.com/ulikunitz/xz v0.5.16 h1:ld6NyySjx5lowVKwJvMRLnW5nxKX/xnpSiFYZ/Lxur0=

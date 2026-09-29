@@ -1,7 +1,9 @@
 package dialogue
 
 import (
+	"fmt"
 	"log"
+	"strconv"
 	"sync"
 
 	"github.com/talkingheads2053/sayanything/pkg/say"
@@ -26,17 +28,39 @@ type Voice struct {
 	p    *say.Player
 }
 
+// Voicevox is the lang value that selects VOICEVOX, with the voice as a style id.
+const Voicevox = "voicevox"
+
+type gpuSpeaker interface {
+	tts.Speaker
+	UseGPU(bool)
+}
+
 func NewVoice(name, lang, voice, dataDir string, gpu bool) (*Voice, error) {
-	t := tts.NewPiper(lang, voice)
-	if err := t.Connect(dataDir); err != nil {
+	t, err := newSpeaker(lang, voice)
+	if err != nil {
 		return nil, err
 	}
 
-	if gpu {
-		t.UseGPU(true)
+	t.UseGPU(gpu)
+	if err := t.Connect(dataDir); err != nil {
+		t.Close()
+		return nil, err
 	}
 
 	return &Voice{Name: name, t: t, p: getSharedPlayer()}, nil
+}
+
+func newSpeaker(lang, voice string) (gpuSpeaker, error) {
+	if lang != Voicevox {
+		return tts.NewPiper(lang, voice), nil
+	}
+
+	style, err := strconv.ParseUint(voice, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("voicevox voice must be a style id number, got %q", voice)
+	}
+	return tts.NewVoicevox(uint32(style)), nil
 }
 
 var speaking = 0
