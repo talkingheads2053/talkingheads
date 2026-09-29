@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/message"
@@ -754,13 +756,13 @@ func (s *sentenceStream) feed(raw string) {
 		return
 	}
 	pending := raw[s.pos:]
-	if strings.ContainsAny(pending, "<{[(*`") || strings.Contains(pending, "call:") {
+	if strings.ContainsAny(pending, "<{[(*`（") || strings.Contains(pending, "call:") {
 		s.stopped = true
 		return
 	}
 	if end := lastSentenceEnd(pending); end >= 0 {
-		s.say(pending[:end+1])
-		s.pos += end + 1
+		s.say(pending[:end])
+		s.pos += end
 	}
 }
 
@@ -794,19 +796,38 @@ func (s *sentenceStream) full() bool {
 	return s.max > 0 && s.count >= s.max
 }
 
-// lastSentenceEnd returns the index of the last '.', '!' or '?' in s that is
-// followed by whitespace, or -1.
+// lastSentenceEnd returns the index just past the last sentence terminator in
+// s, or -1. An ASCII terminator at the very end does not count yet.
 func lastSentenceEnd(s string) int {
-	for i := len(s) - 2; i >= 0; i-- {
-		switch s[i] {
-		case '.', '!', '?':
-			switch s[i+1] {
-			case ' ', '\n', '\t':
-				return i
-			}
+	last := -1
+	for i := 0; i < len(s); i++ {
+		if end, ok := sentenceEnd(s, i, false); ok {
+			last = end
 		}
 	}
-	return -1
+	return last
+}
+
+// sentenceEnd reports whether a sentence terminator starts at byte i of s and
+// returns the index just past it. Japanese terminators need no trailing space.
+func sentenceEnd(s string, i int, final bool) (int, bool) {
+	switch s[i] {
+	case '.', '!', '?':
+		if i+1 >= len(s) {
+			return i + 1, final
+		}
+		switch s[i+1] {
+		case ' ', '\n', '\t':
+			return i + 1, true
+		}
+		return 0, false
+	}
+	r, n := utf8.DecodeRuneInString(s[i:])
+	switch r {
+	case '。', '！', '？':
+		return i + n, true
+	}
+	return 0, false
 }
 
 // appendToolCalls adds the assistant's tool call request to the conversation.
@@ -906,13 +927,17 @@ var orphanAngleRE = regexp.MustCompile(`\bangle:\d+\b`)
 // Single-word parentheticals like "(five)" are preserved.
 var stageDirectionRE = regexp.MustCompile(`\([^)]*\s[^)]*\)`)
 
+// jaStageDirectionRE matches Japanese parentheticals such as "（うなずく）",
+// which have no spaces to tell them apart from single words.
+var jaStageDirectionRE = regexp.MustCompile(`（[^（）]*）|\([^()]*[\p{Hiragana}\p{Katakana}\p{Han}][^()]*\)`)
+
 // htmlTagRE matches any HTML/XML-style tag including orphaned (unmatched)
 // opening or closing tags such as <strong>, </bold>, <em class="foo">, etc.
 var htmlTagRE = regexp.MustCompile(`</?[a-zA-Z][a-zA-Z0-9]*[^>]*>`)
 
-// nonASCIIRE matches runs of characters outside the printable ASCII range.
-// Tab, newline, carriage return, and the space–tilde range are preserved.
-var nonASCIIRE = regexp.MustCompile("[^\t\n\r -~]+")
+// nonASCIIRE matches runs of characters outside printable ASCII and the
+// Japanese kana, kanji, CJK punctuation and full-width forms.
+var nonASCIIRE = regexp.MustCompile("[^\t\n\r -~\u3000-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uFF01-\uFF5E\uFF61-\uFF9F]+")
 
 // jsonResponseRE extracts the string value of a "response" key from a JSON
 // object that may be incomplete (missing closing brace). It matches:
@@ -941,6 +966,7 @@ func stripActorMarkup(s string) string {
 	s = nonASCIIRE.ReplaceAllString(s, "")
 	s = orphanAngleRE.ReplaceAllString(s, "")
 	s = stageDirectionRE.ReplaceAllString(s, "")
+	s = jaStageDirectionRE.ReplaceAllString(s, "")
 	s = dropUnmatchedParens(s)
 	// Replace newlines with spaces so that adjacent words separated only by a
 	// line break (e.g. after a stripped markdown bullet) don't get glued
@@ -971,19 +997,19 @@ func stripActorMarkup(s string) string {
 	return s
 }
 
-// dropUnmatchedParens removes '(' and ')' that have no partner, such as a
-// stray ')' the model writes at the end of a reply.
+// dropUnmatchedParens removes ASCII or full-width parentheses that have no
+// partner, such as a stray ')' the model writes at the end of a reply.
 func dropUnmatchedParens(s string) string {
-	if !strings.ContainsAny(s, "()") {
+	if !strings.ContainsAny(s, "()（）") {
 		return s
 	}
 	drop := make(map[int]bool)
 	var open []int
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '(':
+	for i, r := range s {
+		switch r {
+		case '(', '（':
 			open = append(open, i)
-		case ')':
+		case ')', '）':
 			if len(open) > 0 {
 				open = open[:len(open)-1]
 			} else {
@@ -998,57 +1024,48 @@ func dropUnmatchedParens(s string) string {
 		return s
 	}
 	var b strings.Builder
-	for i := 0; i < len(s); i++ {
+	for i, r := range s {
 		if !drop[i] {
-			b.WriteByte(s[i])
+			b.WriteRune(r)
 		}
 	}
 	return b.String()
 }
 
-// flushSentences calls fn for each complete sentence found in buf (delimited
-// by '.', '!' or '?' followed by whitespace or end-of-string) and returns any
-// remaining partial sentence.
+// flushSentences calls fn for each complete sentence found in buf (see
+// sentenceEnd) and returns any remaining partial sentence.
 func flushSentences(buf string, fn func(string)) string {
 	for {
-		idx := -1
+		end := -1
 		for i := 0; i < len(buf); i++ {
-			c := buf[i]
-			if c == '.' || c == '!' || c == '?' {
-				if i+1 >= len(buf) || buf[i+1] == ' ' || buf[i+1] == '\n' || buf[i+1] == '\t' {
-					idx = i
-					break
-				}
+			if e, ok := sentenceEnd(buf, i, true); ok {
+				end = e
+				break
 			}
 		}
-		if idx < 0 {
+		if end < 0 {
 			break
 		}
-		if sentence := strings.TrimSpace(buf[:idx+1]); sentence != "" {
+		if sentence := strings.TrimSpace(buf[:end]); sentence != "" {
 			fn(sentence)
 		}
-		buf = strings.TrimLeft(buf[idx+1:], " \n\t")
+		buf = strings.TrimLeftFunc(buf[end:], unicode.IsSpace)
 	}
 	return buf
 }
 
-// truncateToSentences returns s truncated to at most max complete sentences
-// (delimited by '.', '!' or '?' followed by whitespace or end-of-string). When
-// max <= 0, s is returned unchanged. Any partial trailing sentence beyond the
-// limit is dropped.
+// truncateToSentences keeps at most max complete sentences of s and drops any
+// partial trailing sentence. When max <= 0, s is returned unchanged.
 func truncateToSentences(s string, max int) string {
 	if max <= 0 {
 		return s
 	}
 	count := 0
 	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '.' || c == '!' || c == '?' {
-			if i+1 >= len(s) || s[i+1] == ' ' || s[i+1] == '\n' || s[i+1] == '\t' {
-				count++
-				if count >= max {
-					return strings.TrimSpace(s[:i+1])
-				}
+		if end, ok := sentenceEnd(s, i, true); ok {
+			count++
+			if count >= max {
+				return strings.TrimSpace(s[:end])
 			}
 		}
 	}

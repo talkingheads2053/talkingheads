@@ -261,8 +261,8 @@ func TestStripActorMarkup_HTMLTags(t *testing.T) {
 	}
 }
 
-// TestStripActorMarkup_NonEnglish verifies that characters outside the
-// printable ASCII range are removed.
+// TestStripActorMarkup_NonEnglish verifies that characters outside printable
+// ASCII and Japanese are removed.
 func TestStripActorMarkup_NonEnglish(t *testing.T) {
 	cases := []struct {
 		input string
@@ -272,10 +272,13 @@ func TestStripActorMarkup_NonEnglish(t *testing.T) {
 		{"caf\u00e9", "caf"},
 		{"na\u00efve", "nave"},
 		// Non-Latin scripts.
-		{"hello \u4e16\u754c", "hello"},
+		{"hello \u4e16\u754c", "hello \u4e16\u754c"},
 		{"\u0645\u0631\u062d\u0628\u0627 world", "world"},
 		// Emoji.
 		{"great job \U0001f44d", "great job"},
+		// Japanese kana, kanji and punctuation are kept.
+		{"こんにちは、世界！カタカナー。", "こんにちは、世界！カタカナー。"},
+		{"よくやった 👍", "よくやった"},
 		// Mixed: only ASCII kept.
 		{"It\u2019s fine", "Its fine"},
 		// Pure ASCII passes through unchanged.
@@ -306,6 +309,7 @@ func TestTruncateToSentences(t *testing.T) {
 		{"mixed terminators", "Hi! How are you? I am fine.", 2, "Hi! How are you?"},
 		{"drop partial trailing", "Done. And then", 1, "Done."},
 		{"no terminator", "incomplete sentence", 3, "incomplete sentence"},
+		{"japanese", "はい。そうです！本当？", 2, "はい。そうです！"},
 	}
 	for _, c := range cases {
 		got := truncateToSentences(c.input, c.max)
@@ -562,10 +566,13 @@ func TestLastSentenceEnd(t *testing.T) {
 	cases := map[string]int{
 		"":              -1,
 		"Hello.":        -1,
-		"Hello. ":       5,
+		"Hello. ":       6,
 		"Pi is 3.14":    -1,
-		"A. B! C":       4,
-		"Wait...\nthen": 6,
+		"A. B! C":       5,
+		"Wait...\nthen": 7,
+		"こんにちは。":        18,
+		"はい！そうです":       9,
+		"本当？ええ。まだ":      18,
 	}
 	for in, want := range cases {
 		if got := lastSentenceEnd(in); got != want {
@@ -580,10 +587,54 @@ func TestStripActorMarkup_UnmatchedParens(t *testing.T) {
 		{"(Hello there", "Hello there"},
 		{"I counted (five) of them.", "I counted (five) of them."},
 		{"Done.) Next (one)", "Done. Next (one)"},
+		{"そうです。）", "そうです。"},
+		{"（はい", "はい"},
 	}
 	for _, c := range cases {
 		if got := stripActorMarkup(c.in); got != c.want {
 			t.Errorf("stripActorMarkup(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestStripActorMarkup_JapaneseStageDirections(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"（うなずく）はい、そうです。", "はい、そうです。"},
+		{"はい(笑)そうです。", "はいそうです。"},
+		{"I counted (five) of them.", "I counted (five) of them."},
+	}
+	for _, c := range cases {
+		if got := stripActorMarkup(c.in); got != c.want {
+			t.Errorf("stripActorMarkup(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestSentenceStream_Japanese(t *testing.T) {
+	var got []string
+	s := &sentenceStream{emit: func(v string) { got = append(got, v) }}
+	s.feed("こんにちは。元気")
+	if len(got) != 1 || got[0] != "こんにちは。" {
+		t.Fatalf("got %q, want [\"こんにちは。\"]", got)
+	}
+	spoken := s.finish("こんにちは。元気ですか？はい")
+	if spoken != "こんにちは。 元気ですか？ はい" {
+		t.Errorf("spoken = %q", spoken)
+	}
+	if len(got) != 3 || got[1] != "元気ですか？" || got[2] != "はい" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSentenceStream_JapaneseStopsAtFullWidthParen(t *testing.T) {
+	var got []string
+	s := &sentenceStream{emit: func(v string) { got = append(got, v) }}
+	s.feed("はい。（うなずく")
+	if len(got) != 0 {
+		t.Fatalf("expected nothing streamed, got %q", got)
+	}
+	s.finish("はい。（うなずく）そうです。")
+	if len(got) != 2 || got[0] != "はい。" || got[1] != "そうです。" {
+		t.Errorf("got %q", got)
 	}
 }
