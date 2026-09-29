@@ -176,6 +176,11 @@ func main() {
 				Usage: "maximum number of sentences spoken per turn; sentences beyond the limit are dropped (0 = unlimited)",
 				Value: actor.DefaultMaxSentences,
 			},
+			&cli.StringFlag{
+				Name:  "lang",
+				Usage: "language for the text the actor sends to the model and its thinking phrases (en, ja)",
+				Value: "en",
+			},
 			&cli.BoolFlag{
 				Name:  "verbose",
 				Usage: "enable verbose logging for debugging",
@@ -202,6 +207,11 @@ func run(c *cli.Context) error {
 	serialPort := c.String("serial")
 	baudRate := c.Int("baud")
 	theme := strings.ToLower(strings.TrimSpace(c.String("theme")))
+	lang := strings.ToLower(strings.TrimSpace(c.String("lang")))
+
+	if err := actor.CheckLang(lang); err != nil {
+		return cli.Exit(err.Error(), 1)
+	}
 
 	if len(modelURL) == 0 {
 		return cli.Exit("--model-url is required", 1)
@@ -286,6 +296,8 @@ func run(c *cli.Context) error {
 	cfg.ThinkingInterval = c.Int("thinking-interval")
 	cfg.MaxSentences = c.Int("max-sentences")
 	cfg.Verbose = verbose
+	cfg.Lang = lang
+	cfg.ThinkingPhrases = actor.ThinkingPhrasesFor(lang)
 
 	if pwFile := c.String("thinking-phrases-file"); pwFile != "" {
 		words, err := loadThinkingPhrases(pwFile)
@@ -312,6 +324,7 @@ func run(c *cli.Context) error {
 			ml.Close()
 		}()
 		ml.SetEventsCh(eventsCh)
+		ml.SetLang(lang)
 		if positions := c.String("actor-positions"); positions != "" {
 			parts := strings.Split(positions, ",")
 			for i, p := range parts {

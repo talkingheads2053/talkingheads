@@ -134,6 +134,8 @@ type Config struct {
 	// beyond the limit are dropped before being emitted to outputFunc.
 	// 0 = unlimited.
 	MaxSentences int
+	// Lang is the language code for the text the actor sends to the model.
+	Lang string
 }
 
 // DefaultConfig returns a Config populated with sensible defaults.
@@ -158,5 +160,6 @@ func DefaultConfig() Config {
 		ThinkingPhrases:  defaultThinkingPhrases,
 		ThinkingInterval: DefaultThinkingInterval,
 		MaxSentences:     DefaultMaxSentences,
+		Lang:             "en",
 	}
 }

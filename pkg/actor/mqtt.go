@@ -31,6 +31,7 @@ type MQTTListener struct {
 	lastSpeaker    string
 	lastSpeakerMu  sync.RWMutex
 	actorPositions []string
+	lang           string
 
 	speakMu   sync.Mutex
 	speakCond *sync.Cond
@@ -49,6 +50,11 @@ func (l *MQTTListener) SetEventsCh(ch chan<- string) {
 // speaking. Pass nil or an empty slice to disable the behaviour.
 func (l *MQTTListener) SetActorPositions(positions []string) {
 	l.actorPositions = positions
+}
+
+// SetLang sets the language code used for the text sent to the model.
+func (l *MQTTListener) SetLang(lang string) {
+	l.lang = lang
 }
 
 // lookAngleFor returns the servo angle (30–150) that this Actor should use to
@@ -191,10 +197,11 @@ func (l *MQTTListener) handleDirection(_ mqtt.Client, msg mqtt.Message) {
 		lastSpeaker := l.lastSpeaker
 		l.lastSpeakerMu.RUnlock()
 		if lastSpeaker != "" {
+			p := phrasesFor(l.lang)
 			if text == "" {
-				text = "Now respond directly to " + lastSpeaker + "."
+				text = fmt.Sprintf(p.respondNow, lastSpeaker)
 			} else {
-				text = text + " Respond directly to " + lastSpeaker + "."
+				text += fmt.Sprintf(p.respondAlso, lastSpeaker)
 			}
 		}
 	}
@@ -286,7 +293,7 @@ func (l *MQTTListener) handleSpeak(_ mqtt.Client, msg mqtt.Message) {
 	if l.verbose {
 		log.Printf("Heard %s say: %s\n", s.Who, s.What)
 	}
-	l.enqueueHeard(s.Who + " says: " + s.What)
+	l.enqueueHeard(fmt.Sprintf(phrasesFor(l.lang).says, s.Who, s.What))
 }
 
 func (l *MQTTListener) enqueueHeard(text string) {
