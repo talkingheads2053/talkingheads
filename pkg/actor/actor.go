@@ -494,7 +494,7 @@ func (a *Actor) handleToolCalls(ctx context.Context, conversation *[]message.Mes
 		}
 		*conversation = append(*conversation, message.Chat{
 			Role:    "user",
-			Content: "You called motion tools but included no spoken words. You MUST write your actual answer as plain text. Reply now with spoken sentences.",
+			Content: phrasesFor(a.cfg.Lang).noWords,
 		})
 		if a.cfg.Verbose {
 			log.Printf("tool-only turn %d/%d, nudging for verbal response", consecutiveToolOnlyTurns, maxConsecutiveToolOnlyTurns)
@@ -523,7 +523,7 @@ func (a *Actor) handleToolCalls(ctx context.Context, conversation *[]message.Mes
 	// give a verbal response — tool calls alone are not enough.
 	*conversation = append(*conversation, message.Chat{
 		Role:    "user",
-		Content: "You called motion tools but included no spoken words. Note: calling tool_movement with command 'speak' is a head-motion cue — it is NOT a verbal response. You MUST write your actual answer as plain text outside any function blocks. Reply now with spoken sentences.",
+		Content: phrasesFor(a.cfg.Lang).noWordsSpeak,
 	})
 	if a.cfg.Verbose {
 		log.Printf("tool-only turn %d/%d, nudging for verbal response", consecutiveToolOnlyTurns, maxConsecutiveToolOnlyTurns)

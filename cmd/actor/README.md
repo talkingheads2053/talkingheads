@@ -22,6 +22,7 @@ One of `--model-url` or `--model-path` is required.
 | `--serial` | | | Serial port for sending action commands to the microcontroller (e.g. `/dev/ttyACM0`) |
 | `--baud` | | `9600` | Baud rate for the serial port |
 | `--theme` | | | Personality color sent to the action firmware on startup (`red`, `green`, `blue`, `purple`, `orange`, `yellow`) |
+| `--lang` | | `en` | Language for the prompts the actor sends to the model and its default thinking phrases (`en`, `ja`) |
 | `--thinking-phrases-file` | `-tp` | | Path to a file of thinking phrases, one per line; overrides the built-in defaults |
 | `--thinking-interval` | | `5` | Seconds between repeated thinking phrases while waiting for the model's first token |
 | `--actor-positions` | `-ap` | | Comma-separated left-to-right stage order of all actors as seen from the audience (e.g. `gemmai,phineas,qwentin`); pass the same value to every actor |
