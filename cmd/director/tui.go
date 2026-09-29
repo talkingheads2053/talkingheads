@@ -231,20 +231,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, vpCmd
 		}
 
-		// Parse transcribed text using the same actor-matching logic.
-		idx := strings.IndexAny(msg.text, ":,?. \t")
-		if idx < 0 {
-			m.appendLine(errorStyle.Render(fmt.Sprintf("hotmic: no actor separator in %q", msg.text)))
-			m.vp, vpCmd = m.vp.Update(msg)
-			return m, vpCmd
-		}
-		nameRaw := strings.ToLower(strings.TrimSpace(msg.text[:idx]))
-		content := strings.TrimSpace(msg.text[idx+1:])
-
-		to, ok := matchActor(nameRaw)
-		if !ok {
-			m.appendLine(errorStyle.Render(
-				fmt.Sprintf("hotmic: unknown actor %q in %q", nameRaw, msg.text)))
+		to, content, err := parseTranscript(msg.text)
+		if err != nil {
+			m.appendLine(errorStyle.Render("hotmic: " + err.Error()))
 			m.vp, vpCmd = m.vp.Update(msg)
 			return m, vpCmd
 		}

@@ -1,19 +1,94 @@
 package main
 
 import (
+	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
-// matchActor finds the actor whose name best matches spoken.
-// It normalises both sides (lowercase, alphanumeric only) and applies three
-// strategies in order:
-//  1. Exact match after normalisation.
-//  2. Substring containment (handles e.g. "lama" → "llama3000").
-//  3. Fuzzy edit-distance: accept the closest actor when the Levenshtein
-//     distance is ≤ 60 % of the longer normalised name (handles transcription
-//     errors like "lamma3000"→"llama3000" or "jamai"→"gemmai").
+// transcriptSeparators end the actor name in a transcript, including Japanese punctuation.
+const transcriptSeparators = ":,?. \t、，。？：　"
+
+// honorifics may follow a Japanese actor name, as in ジェマイさん.
+var honorifics = []string{"さん", "くん", "ちゃん", "様"}
+
+// parseTranscript splits a hot mic transcript into the actor it addresses and
+// the rest. Japanese transcripts often have no separator after the name.
+func parseTranscript(text string) (string, string, error) {
+	text = strings.TrimSpace(text)
+	if idx := strings.IndexAny(text, transcriptSeparators); idx >= 0 {
+		_, size := utf8.DecodeRuneInString(text[idx:])
+		if to, ok := matchActor(strings.ToLower(strings.TrimSpace(text[:idx]))); ok {
+			return to, strings.TrimSpace(text[idx+size:]), nil
+		}
+	}
+	if to, rest, ok := matchActorPrefix(text); ok {
+		return to, rest, nil
+	}
+	return "", "", fmt.Errorf("unknown actor in %q", text)
+}
+
+// matchActorPrefix finds the longest actor name or alias that starts text and
+// returns the rest without a leading honorific or separator.
+func matchActorPrefix(text string) (string, string, bool) {
+	names := make(map[string]string)
+	for _, p := range actors {
+		names[normalise(p)] = p
+	}
+	for actor, aliases := range actorAliases {
+		for _, alias := range aliases {
+			names[normalise(alias)] = actor
+		}
+	}
+
+	var b strings.Builder
+	found, end := "", 0
+	for i, r := range text {
+		n, ok := normaliseRune(r)
+		if !ok {
+			continue
+		}
+		b.WriteRune(n)
+		actor, ok := names[b.String()]
+		if !ok {
+			continue
+		}
+		next := i + utf8.RuneLen(r)
+		if next < len(text) && isASCIIAlnum(text[next]) {
+			continue
+		}
+		found, end = actor, next
+	}
+	if found == "" {
+		return "", "", false
+	}
+
+	rest := strings.TrimLeftFunc(text[end:], isSeparator)
+	for _, h := range honorifics {
+		if strings.HasPrefix(rest, h) {
+			rest = strings.TrimLeftFunc(rest[len(h):], isSeparator)
+			break
+		}
+	}
+	return found, strings.TrimSpace(rest), true
+}
+
+func isASCIIAlnum(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+}
+
+func isSeparator(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsPunct(r)
+}
+
+// matchActor finds the actor whose name best matches spoken by alias, exact
+// name, substring, and then fuzzy edit distance, all after normalising.
 func matchActor(spoken string) (string, bool) {
 	norm := normalise(spoken)
+	if norm == "" {
+		return "", false
+	}
 	// 0. Alias match: check explicit alternate names before anything else.
 	for actor, aliases := range actorAliases {
 		for _, alias := range aliases {
@@ -44,8 +119,8 @@ func matchActor(spoken string) (string, bool) {
 		}
 	}
 	if best != "" {
-		maxLen := len(norm)
-		if n := len(normalise(best)); n > maxLen {
+		maxLen := utf8.RuneCountInString(norm)
+		if n := utf8.RuneCountInString(normalise(best)); n > maxLen {
 			maxLen = n
 		}
 		if float64(bestDist) <= float64(maxLen)*fuzzyThreshold {
@@ -55,8 +130,9 @@ func matchActor(spoken string) (string, bool) {
 	return "", false
 }
 
-// levenshtein returns the edit distance between a and b.
-func levenshtein(a, b string) int {
+// levenshtein returns the edit distance in runes between as and bs.
+func levenshtein(as, bs string) int {
+	a, b := []rune(as), []rune(bs)
 	if len(a) == 0 {
 		return len(b)
 	}
@@ -92,13 +168,22 @@ func minInt(a, b, c int) int {
 	return a
 }
 
-// normalise lowercases s and strips everything that is not a letter or digit.
+// normalise lowercases s, turns hiragana into katakana, and strips everything
+// that is not a letter or digit.
 func normalise(s string) string {
 	var b strings.Builder
-	for _, r := range strings.ToLower(s) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
+	for _, r := range s {
+		if n, ok := normaliseRune(r); ok {
+			b.WriteRune(n)
 		}
 	}
 	return b.String()
+}
+
+func normaliseRune(r rune) (rune, bool) {
+	r = unicode.ToLower(r)
+	if r >= 'ぁ' && r <= 'ゖ' {
+		r += 'ァ' - 'ぁ'
+	}
+	return r, unicode.IsLetter(r) || unicode.IsDigit(r)
 }
