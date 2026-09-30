@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strings"
 	"sync"
+	"unicode"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/hybridgroup/yzma/pkg/message"
@@ -33,6 +35,10 @@ type MQTTListener struct {
 	actorPositions []string
 	lang           string
 
+	repeatLen int
+	heardMu   sync.Mutex
+	recent    []string
+
 	speakMu   sync.Mutex
 	speakCond *sync.Cond
 	speakN    int // number of phrases issued but not yet StatusStopped
@@ -55,6 +61,78 @@ func (l *MQTTListener) SetActorPositions(positions []string) {
 // SetLang sets the language code used for the text sent to the model.
 func (l *MQTTListener) SetLang(lang string) {
 	l.lang = lang
+}
+
+// SetRepeatGuard makes RepeatsHeard report a sentence that shares n letters
+// in a row with a recent line from another actor or from this one. 0 turns it off.
+func (l *MQTTListener) SetRepeatGuard(n int) {
+	l.repeatLen = n
+}
+
+// recentHeardLines is how many recent lines RepeatsHeard checks.
+const recentHeardLines = 12
+
+func (l *MQTTListener) rememberHeard(text string) {
+	if l.repeatLen <= 0 {
+		return
+	}
+	l.heardMu.Lock()
+	defer l.heardMu.Unlock()
+	l.recent = append(l.recent, letters(text))
+	if len(l.recent) > recentHeardLines {
+		l.recent = l.recent[len(l.recent)-recentHeardLines:]
+	}
+}
+
+// RepeatsHeard reports whether sentence copies a run of letters from a line
+// this actor or another actor said recently.
+func (l *MQTTListener) RepeatsHeard(sentence string) bool {
+	if l.repeatLen <= 0 {
+		return false
+	}
+	s := letters(sentence)
+	l.heardMu.Lock()
+	defer l.heardMu.Unlock()
+	for _, h := range l.recent {
+		if longestCommonRun(s, h) >= l.repeatLen {
+			if l.verbose {
+				log.Printf("Sentence repeats a recent line: %s\n", sentence)
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// letters lowercases s and keeps only its letters and digits.
+func letters(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return unicode.ToLower(r)
+		}
+		return -1
+	}, s)
+}
+
+// longestCommonRun returns the length in runes of the longest substring of a
+// that is also in b.
+func longestCommonRun(as, bs string) int {
+	a, b := []rune(as), []rune(bs)
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	best := 0
+	for i := range a {
+		for j := range b {
+			if a[i] == b[j] {
+				curr[j+1] = prev[j] + 1
+				best = max(best, curr[j+1])
+			} else {
+				curr[j+1] = 0
+			}
+		}
+		prev, curr = curr, prev
+	}
+	return best
 }
 
 // lookAngleFor returns the servo angle (30–150) that this Actor should use to
@@ -293,6 +371,7 @@ func (l *MQTTListener) handleSpeak(_ mqtt.Client, msg mqtt.Message) {
 	if l.verbose {
 		log.Printf("Heard %s say: %s\n", s.Who, s.What)
 	}
+	l.rememberHeard(s.What)
 	l.enqueueHeard(fmt.Sprintf(phrasesFor(l.lang).says, s.Who, s.What))
 }
 
@@ -437,6 +516,9 @@ func (l *MQTTListener) makeOutputFunc(thinking bool) func(string) {
 		content = removeOtherUnwantedChars(content)
 		if len(content) == 0 {
 			return
+		}
+		if !thinking {
+			l.rememberHeard(content)
 		}
 		payload, err := json.Marshal(commands.Speak{Who: l.name, What: content, Thinking: thinking})
 		if err != nil {

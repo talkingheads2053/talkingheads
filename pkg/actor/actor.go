@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +38,7 @@ type Actor struct {
 	outputFunc           func(content string)
 	thinkingOutputFunc   func(content string)
 	speakingDoneFunc     func()
+	rejectFunc           func(sentence string) bool
 	tools                map[string]Tool
 	toolsJSON            string
 }
@@ -547,6 +550,16 @@ func (a *Actor) SetSpeakingDoneFunc(fn func()) {
 	a.speakingDoneFunc = fn
 }
 
+// SetRejectFunc registers a check on each sentence before it is spoken. A
+// rejected sentence is removed from the model's context and written again.
+func (a *Actor) SetRejectFunc(fn func(sentence string) bool) {
+	a.rejectFunc = fn
+}
+
+// maxRejectRetries is how many times one spot in a reply is written again
+// before the reply ends there.
+const maxRejectRetries = 3
+
 // setupThinkingPhrases builds a shuffled deck of thinking phrases and returns a
 // function that yields the next phrase, reshuffling when the deck is exhausted.
 // A mutex guards the deck so the goroutine from the previous turn may still be
@@ -646,7 +659,14 @@ func (a *Actor) generateTurn(ctx context.Context, conversation *[]message.Messag
 
 	var buf strings.Builder
 	pieceBuf := make([]byte, 128)
-	stream := &sentenceStream{emit: a.outputFunc, max: a.cfg.MaxSentences}
+	stream := &sentenceStream{emit: a.outputFunc, reject: a.rejectFunc, guard: a.cfg.RepeatGuard, max: a.cfg.MaxSentences}
+
+	// gen holds the tokens generated this turn and ends the length of buf
+	// after each one, so a rejected sentence can be rewound to a token.
+	var gen []llama.Token
+	var ends []int
+	bans := make(map[int][]llama.Token)
+	nVocab := int(llama.VocabNTokens(a.vocab))
 
 	generationStopMarkers := message.StopMarkers(a.vocab, a.cfg.ModelFormat)
 
@@ -661,6 +681,13 @@ generateLoop:
 		default:
 		}
 
+		if banned := bans[len(gen)]; len(banned) > 0 {
+			if logits, err := llama.GetLogitsIth(a.llamaCtx, -1, nVocab); err == nil && logits != nil {
+				for _, t := range banned {
+					logits[t] = float32(math.Inf(-1))
+				}
+			}
+		}
 		token := llama.SamplerSample(a.sampler, a.llamaCtx, -1)
 		if llama.VocabIsEOG(a.vocab, token) {
 			break
@@ -673,6 +700,10 @@ generateLoop:
 		n := llama.TokenToPiece(a.vocab, token, pieceBuf, 0, true)
 		if n > 0 {
 			buf.Write(pieceBuf[:n])
+		}
+		gen = append(gen, token)
+		ends = append(ends, buf.Len())
+		if n > 0 {
 
 			full := buf.String()
 			for _, marker := range generationStopMarkers {
@@ -699,6 +730,22 @@ generateLoop:
 			}
 
 			stream.feed(full)
+			if stream.rejected {
+				k := sort.SearchInts(ends, stream.pos+1)
+				if len(bans[k]) >= maxRejectRetries || !a.rewind(len(a.cachedTokens)-len(gen)+1, k) {
+					buf.Reset()
+					buf.WriteString(full[:stream.pos])
+					break generateLoop
+				}
+				bans[k] = append(bans[k], gen[k])
+				gen, ends = gen[:k], ends[:k]
+				buf.Reset()
+				if k > 0 {
+					buf.WriteString(full[:ends[k-1]])
+				}
+				stream.rewound(buf.Len())
+				continue
+			}
 			if stream.full() {
 				break generateLoop
 			}
@@ -742,36 +789,67 @@ func stripThinkTags(s string) string {
 // sentenceStream speaks sentences while the model is still generating. It stops
 // streaming once markup shows up and leaves the rest to finish.
 type sentenceStream struct {
-	emit    func(string)
-	max     int
-	count   int
-	pos     int
-	stopped bool
-	spoken  []string
+	emit     func(string)
+	reject   func(string) bool
+	guard    int
+	max      int
+	count    int
+	pos      int
+	stopped  bool
+	rejected bool
+	spoken   []string
 }
 
-// feed speaks the complete sentences in raw that have not been spoken yet.
+// feed speaks the complete sentences in raw that have not been spoken yet. It
+// sets rejected and leaves pos at the start of a sentence that reject refuses.
 func (s *sentenceStream) feed(raw string) {
-	if s.stopped || s.full() {
-		return
-	}
-	pending := raw[s.pos:]
-	if strings.ContainsAny(pending, "<{[(*`（") || strings.Contains(pending, "call:") {
-		s.stopped = true
-		return
-	}
-	if end := lastSentenceEnd(pending); end >= 0 {
+	for !s.stopped && !s.full() {
+		pending := raw[s.pos:]
+		if strings.ContainsAny(pending, "<{[(*`（") || strings.Contains(pending, "call:") {
+			s.stopped = true
+			return
+		}
+		end := firstSentenceEnd(pending)
+		if end < 0 {
+			return
+		}
+		if s.refuses(pending[:end]) {
+			s.rejected = true
+			return
+		}
 		s.say(pending[:end])
 		s.pos += end
 	}
 }
 
+// rewound clears rejected after raw was cut back to n bytes.
+func (s *sentenceStream) rewound(n int) {
+	s.rejected = false
+	s.pos = min(s.pos, n)
+}
+
+func (s *sentenceStream) refuses(segment string) bool {
+	sentence := strings.TrimSpace(stripActorMarkup(segment))
+	if sentence == "" {
+		return false
+	}
+	if s.guard > 0 {
+		l := letters(sentence)
+		for _, prev := range s.spoken {
+			if longestCommonRun(l, letters(prev)) >= s.guard {
+				return true
+			}
+		}
+	}
+	return s.reject != nil && s.reject(sentence)
+}
+
 // finish speaks what is left in raw and returns everything spoken this turn.
 func (s *sentenceStream) finish(raw string) string {
-	if s.pos < len(raw) {
+	if s.pos < len(raw) && !s.rejected && !s.refuses(raw[s.pos:]) {
 		s.say(stripThinkTags(raw[s.pos:]))
-		s.pos = len(raw)
 	}
+	s.pos = len(raw)
 	return strings.Join(s.spoken, " ")
 }
 
@@ -796,16 +874,15 @@ func (s *sentenceStream) full() bool {
 	return s.max > 0 && s.count >= s.max
 }
 
-// lastSentenceEnd returns the index just past the last sentence terminator in
-// s, or -1. An ASCII terminator at the very end does not count yet.
-func lastSentenceEnd(s string) int {
-	last := -1
+// firstSentenceEnd returns the index just past the first sentence terminator
+// in s, or -1. An ASCII terminator at the very end does not count yet.
+func firstSentenceEnd(s string) int {
 	for i := 0; i < len(s); i++ {
 		if end, ok := sentenceEnd(s, i, false); ok {
-			last = end
+			return end
 		}
 	}
-	return last
+	return -1
 }
 
 // sentenceEnd reports whether a sentence terminator starts at byte i of s and
@@ -828,6 +905,31 @@ func sentenceEnd(s string, i int, final bool) (int, bool) {
 		return i + n, true
 	}
 	return 0, false
+}
+
+// rewind drops generated tokens from index k on out of the KV cache, where
+// start is the cache position of token 0, and decodes the one before again.
+func (a *Actor) rewind(start, k int) bool {
+	mem, err := llama.GetMemory(a.llamaCtx)
+	if err != nil {
+		return false
+	}
+	pos := start + k - 1
+	if pos < 1 || pos >= len(a.cachedTokens) {
+		return false
+	}
+	last := a.cachedTokens[pos]
+	if ok, err := llama.MemorySeqRm(mem, 0, llama.Pos(pos), -1); !ok || err != nil {
+		a.cachedTokens = nil
+		return false
+	}
+	a.cachedTokens = a.cachedTokens[:pos]
+	if _, err := llama.Decode(a.llamaCtx, llama.BatchGetOne([]llama.Token{last})); err != nil {
+		a.cachedTokens = nil
+		return false
+	}
+	a.cachedTokens = append(a.cachedTokens, last)
+	return true
 }
 
 // appendToolCalls adds the assistant's tool call request to the conversation.
