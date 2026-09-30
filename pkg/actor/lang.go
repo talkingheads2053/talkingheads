@@ -22,6 +22,8 @@ type phrases struct {
 	noLatinRewrite bool
 	// sentenceEnd ends guidance text before respondAlso is added.
 	sentenceEnd string
+	// latinWords are the only Latin words a sentence may use when set.
+	latinWords []string
 }
 
 var languages = map[string]phrases{
@@ -45,7 +47,16 @@ var languages = map[string]phrases{
 		thinking:       jaThinkingPhrases,
 		noLatinRewrite: true,
 		sentenceEnd:    "。",
+		latinWords:     jaLatinWords,
 	},
+}
+
+// jaLatinWords come from the Latin words used in the ja training replies.
+var jaLatinWords = []string{
+	"go", "tinygo", "conf", "ai", "cpu", "led", "gpio", "usb", "wifi", "wi", "fi", "kb",
+	"gemmai", "gemma", "google", "pepsi",
+	"phineas", "phi", "microsoft", "phillip", "morris",
+	"qwentin", "qwen", "ali", "baba", "british", "petroleum",
 }
 
 var jaThinkingPhrases = []string{
@@ -120,4 +131,29 @@ func endSentence(s, end string) string {
 		}
 	}
 	return s + end
+}
+
+// hasStrayLatin reports whether s has a Latin word that is not in allowed.
+func hasStrayLatin(s string, allowed map[string]bool) bool {
+	for _, w := range strings.FieldsFunc(s, func(r rune) bool {
+		return r >= utf8.RuneSelf || !unicode.IsLetter(r)
+	}) {
+		if !allowed[strings.ToLower(w)] {
+			return true
+		}
+	}
+	return false
+}
+
+// latinAllowList returns the allowed Latin words for lang, or nil for no limit.
+func latinAllowList(lang string) map[string]bool {
+	words := phrasesFor(lang).latinWords
+	if words == nil {
+		return nil
+	}
+	m := make(map[string]bool, len(words))
+	for _, w := range words {
+		m[w] = true
+	}
+	return m
 }
