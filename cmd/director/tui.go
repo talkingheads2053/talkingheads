@@ -225,7 +225,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vp, vpCmd = m.vp.Update(msg)
 			return m, vpCmd
 		}
-		if msg.text == "" {
+		if msg.text == "" || isWhisperFiller(msg.text) {
 			m.appendLine(hotmicStyle.Render("hotmic: nothing transcribed"))
 			m.vp, vpCmd = m.vp.Update(msg)
 			return m, vpCmd
