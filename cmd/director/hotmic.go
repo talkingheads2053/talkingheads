@@ -11,19 +11,48 @@ import (
 const transcriptSeparators = ":,?. \t、，。？：　"
 
 // honorifics may follow a Japanese actor name, as in ジェマイさん.
-var honorifics = []string{"さん", "くん", "ちゃん", "様"}
+var honorifics = []string{"さん", "くん", "ちゃん", "様", "サン", "クン", "チャン"}
+
+// whisperFillers are phrases whisper tends to produce from silence or very
+// short audio, learned from video subtitles.
+var whisperFillers = []string{
+	"ご視聴ありがとうございました",
+	"ご清聴ありがとうございました",
+	"チャンネル登録よろしくお願いします",
+	"thank you for watching",
+	"thanks for watching",
+	"thank you",
+	"you",
+}
+
+// isWhisperFiller reports whether the whole transcript is a whisper filler.
+func isWhisperFiller(text string) bool {
+	norm := normalise(text)
+	for _, f := range whisperFillers {
+		if norm == normalise(f) {
+			return true
+		}
+	}
+	return false
+}
 
 // parseTranscript splits a hot mic transcript into the actor it addresses and
 // the rest. Japanese transcripts often have no separator after the name.
 func parseTranscript(text string) (string, string, error) {
 	text = strings.TrimSpace(text)
+	name, rest := "", ""
 	if idx := strings.IndexAny(text, transcriptSeparators); idx >= 0 {
 		_, size := utf8.DecodeRuneInString(text[idx:])
-		if to, ok := matchActor(strings.ToLower(strings.TrimSpace(text[:idx]))); ok {
-			return to, strings.TrimSpace(text[idx+size:]), nil
+		name = trimHonorific(strings.ToLower(strings.TrimSpace(text[:idx])))
+		rest = strings.TrimSpace(text[idx+size:])
+		if to, ok := matchActor(name); ok {
+			return to, rest, nil
 		}
 	}
 	if to, rest, ok := matchActorPrefix(text); ok {
+		return to, rest, nil
+	}
+	if to, ok := matchActorFuzzy(name); ok {
 		return to, rest, nil
 	}
 	return "", "", fmt.Errorf("unknown actor in %q", text)
@@ -74,6 +103,16 @@ func matchActorPrefix(text string) (string, string, bool) {
 	return found, strings.TrimSpace(rest), true
 }
 
+// trimHonorific drops a trailing honorific from a spoken name.
+func trimHonorific(name string) string {
+	for _, h := range honorifics {
+		if s, ok := strings.CutSuffix(name, h); ok && s != "" {
+			return s
+		}
+	}
+	return name
+}
+
 func isASCIIAlnum(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
@@ -82,8 +121,8 @@ func isSeparator(r rune) bool {
 	return unicode.IsSpace(r) || unicode.IsPunct(r)
 }
 
-// matchActor finds the actor whose name best matches spoken by alias, exact
-// name, substring, and then fuzzy edit distance, all after normalising.
+// matchActor finds the actor whose name matches spoken by alias, exact name,
+// or substring, all after normalising.
 func matchActor(spoken string) (string, bool) {
 	norm := normalise(spoken)
 	if norm == "" {
@@ -110,17 +149,32 @@ func matchActor(spoken string) (string, bool) {
 			return p, true
 		}
 	}
-	// 3. Fuzzy fallback: pick the actor with the smallest edit distance.
-	best, bestDist := "", int(^uint(0)>>1)
+	return "", false
+}
+
+// matchActorFuzzy picks the actor or alias closest to spoken by edit distance.
+func matchActorFuzzy(spoken string) (string, bool) {
+	norm := normalise(spoken)
+	if norm == "" {
+		return "", false
+	}
+	best, bestName, bestDist := "", "", int(^uint(0)>>1)
+	try := func(actor, name string) {
+		if d := levenshtein(norm, normalise(name)); d < bestDist {
+			best, bestName, bestDist = actor, name, d
+		}
+	}
 	for _, p := range actors {
-		if d := levenshtein(norm, normalise(p)); d < bestDist {
-			bestDist = d
-			best = p
+		try(p, p)
+	}
+	for actor, aliases := range actorAliases {
+		for _, alias := range aliases {
+			try(actor, alias)
 		}
 	}
 	if best != "" {
 		maxLen := utf8.RuneCountInString(norm)
-		if n := utf8.RuneCountInString(normalise(best)); n > maxLen {
+		if n := utf8.RuneCountInString(normalise(bestName)); n > maxLen {
 			maxLen = n
 		}
 		if float64(bestDist) <= float64(maxLen)*fuzzyThreshold {

@@ -81,7 +81,7 @@ The spoken actor name is matched using three strategies in order:
 
 1. **Exact match** after normalisation (lowercase, letters and digits only, hiragana turned into katakana).
 2. **Substring containment** — handles e.g. "lama" → `llama3000`.
-3. **Fuzzy edit-distance** — accepts the closest actor when the Levenshtein distance is within `--hotmic-fuzzy-threshold` of the longer name.
+3. **Fuzzy edit-distance** — accepts the closest actor name or alias when the Levenshtein distance is within `--hotmic-fuzzy-threshold` of the longer name. This runs last, so `コヘンティン` still reaches qwentin through the alias `クエンティン`.
 
 **Aliases** defined with `--hotmic-actor-alias` are checked before all three strategies. Use this to handle systematic whisper.cpp mis-transcriptions:
 
@@ -100,7 +100,7 @@ Use `--hotmic-lang ja` with a multilingual whisper model such as `ggml-small.bin
 --hotmic-actor-alias "qwentin:クエンティン"
 ```
 
-The name can be followed by `、` or by nothing at all, as in `ジェマイ自己紹介してください`. A trailing さん, くん, ちゃん, or 様 is dropped.
+The name can be followed by `、` or by nothing at all, as in `ジェマイ自己紹介してください`. A trailing さん, くん, ちゃん, or 様 is dropped, in hiragana or katakana.
 
 Press **Ctrl+C** to exit.
 
