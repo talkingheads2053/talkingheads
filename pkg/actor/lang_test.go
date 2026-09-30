@@ -66,3 +66,19 @@ func TestHandleDirection_RespondJapanese(t *testing.T) {
 		}
 	}
 }
+
+func TestHasLatin(t *testing.T) {
+	for s, want := range map[string]bool{
+		"Morning": true,
+		" the":    true,
+		"朝noon":   true,
+		"こんにちは":   false,
+		"。":       false,
+		"123":     false,
+		"ＴｉｎｙＧｏ":  false,
+	} {
+		if got := hasLatin(s); got != want {
+			t.Errorf("hasLatin(%q) = %v, want %v", s, got, want)
+		}
+	}
+}

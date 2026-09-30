@@ -27,6 +27,7 @@ type Actor struct {
 	llamaModel   llama.Model
 	llamaCtx     llama.Context
 	vocab        llama.Vocab
+	latinTokens  []llama.Token
 	sampler      llama.Sampler
 	chatTemplate string
 
@@ -137,11 +138,17 @@ func NewActor(modelPath string, cfg Config, commander Commander, moreFunc func(c
 		RegisterMovement(toolsMap, commander),
 	}
 
+	var latin []llama.Token
+	if cfg.RepeatGuard > 0 && phrasesFor(cfg.Lang).noLatinRewrite {
+		latin = latinTokens(vocab)
+	}
+
 	return &Actor{
 		cfg:                  cfg,
 		llamaModel:           mdl,
 		llamaCtx:             lctx,
 		vocab:                vocab,
+		latinTokens:          latin,
 		sampler:              smpl,
 		chatTemplate:         chatTmpl,
 		moreConversationFunc: moreFunc,
@@ -686,6 +693,9 @@ generateLoop:
 				for _, t := range banned {
 					logits[t] = float32(math.Inf(-1))
 				}
+				for _, t := range a.latinTokens {
+					logits[t] = float32(math.Inf(-1))
+				}
 			}
 		}
 		token := llama.SamplerSample(a.sampler, a.llamaCtx, -1)
@@ -909,6 +919,18 @@ func sentenceEnd(s string, i int, final bool) (int, bool) {
 
 // rewind drops generated tokens from index k on out of the KV cache, where
 // start is the cache position of token 0, and decodes the one before again.
+// latinTokens returns the tokens whose text has an ASCII letter.
+func latinTokens(vocab llama.Vocab) []llama.Token {
+	var out []llama.Token
+	buf := make([]byte, 128)
+	for t := range llama.Token(llama.VocabNTokens(vocab)) {
+		if n := llama.TokenToPiece(vocab, t, buf, 0, false); n > 0 && hasLatin(string(buf[:n])) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 func (a *Actor) rewind(start, k int) bool {
 	mem, err := llama.GetMemory(a.llamaCtx)
 	if err != nil {
