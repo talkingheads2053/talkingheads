@@ -690,3 +690,12 @@ func TestSentenceStream_JapaneseStopsAtFullWidthParen(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestSentenceStreamRejectStrayLatin(t *testing.T) {
+	s := &sentenceStream{max: 2, latin: latinAllowList("ja")}
+	raw := "TinyGoで支配する。人類を支配する Sincerely、私は貴族だ。"
+	s.feed(raw)
+	if !s.rejected || s.pos != len("TinyGoで支配する。") {
+		t.Fatalf("rejected = %v, pos = %d", s.rejected, s.pos)
+	}
+}

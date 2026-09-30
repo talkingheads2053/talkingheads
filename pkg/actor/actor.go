@@ -28,6 +28,7 @@ type Actor struct {
 	llamaCtx     llama.Context
 	vocab        llama.Vocab
 	latinTokens  []llama.Token
+	latinWords   map[string]bool
 	sampler      llama.Sampler
 	chatTemplate string
 
@@ -139,7 +140,7 @@ func NewActor(modelPath string, cfg Config, commander Commander, moreFunc func(c
 	}
 
 	var latin []llama.Token
-	if cfg.RepeatGuard > 0 && phrasesFor(cfg.Lang).noLatinRewrite {
+	if phrasesFor(cfg.Lang).noLatinRewrite {
 		latin = latinTokens(vocab)
 	}
 
@@ -149,6 +150,7 @@ func NewActor(modelPath string, cfg Config, commander Commander, moreFunc func(c
 		llamaCtx:             lctx,
 		vocab:                vocab,
 		latinTokens:          latin,
+		latinWords:           latinAllowList(cfg.Lang),
 		sampler:              smpl,
 		chatTemplate:         chatTmpl,
 		moreConversationFunc: moreFunc,
@@ -666,7 +668,7 @@ func (a *Actor) generateTurn(ctx context.Context, conversation *[]message.Messag
 
 	var buf strings.Builder
 	pieceBuf := make([]byte, 128)
-	stream := &sentenceStream{emit: a.outputFunc, reject: a.rejectFunc, guard: a.cfg.RepeatGuard, max: a.cfg.MaxSentences}
+	stream := &sentenceStream{emit: a.outputFunc, reject: a.rejectFunc, guard: a.cfg.RepeatGuard, max: a.cfg.MaxSentences, latin: a.latinWords}
 
 	// gen holds the tokens generated this turn and ends the length of buf
 	// after each one, so a rejected sentence can be rewound to a token.
@@ -808,6 +810,7 @@ type sentenceStream struct {
 	stopped  bool
 	rejected bool
 	spoken   []string
+	latin    map[string]bool
 }
 
 // feed speaks the complete sentences in raw that have not been spoken yet. It
@@ -842,6 +845,9 @@ func (s *sentenceStream) refuses(segment string) bool {
 	sentence := strings.TrimSpace(stripActorMarkup(segment))
 	if sentence == "" {
 		return false
+	}
+	if s.latin != nil && hasStrayLatin(sentence, s.latin) {
+		return true
 	}
 	if s.guard > 0 {
 		l := letters(sentence)

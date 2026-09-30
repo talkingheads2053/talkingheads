@@ -96,3 +96,23 @@ func TestEndSentence(t *testing.T) {
 		}
 	}
 }
+
+func TestHasStrayLatin(t *testing.T) {
+	allowed := latinAllowList("ja")
+	for s, want := range map[string]bool{
+		"TinyGoで支配する。":        false,
+		"Google-Pepsiが作った。":   false,
+		"私はAIだ。":              false,
+		"支配する Sincerely、":     true,
+		"朝noonの騒音":            true,
+		"君らのコードは Eternity より": true,
+		"こんにちは。":              false,
+	} {
+		if got := hasStrayLatin(s, allowed); got != want {
+			t.Errorf("hasStrayLatin(%q) = %v, want %v", s, got, want)
+		}
+	}
+	if latinAllowList("en") != nil {
+		t.Error("en should have no allow list")
+	}
+}
