@@ -22,13 +22,13 @@ actor:
 	cd cmd/actor && go build -o ../../build/actor .
 
 dialogue:
-	cd cmd/dialogue && go build -o ../../build/dialogue .
+	cd cmd/dialogue && go install .
 
 director:
-	cd cmd/director && go build -o ../../build/director .
+	cd cmd/director && go install .
 
 director-cuda:
-	cd cmd/director && go build -o ../../build/director .
+	cd cmd/director && go install .
 
 arduino-actor:
 	cd cmd/actor && GOARCH=arm64 GOOS=linux go build -o ../../build/actor_arm64

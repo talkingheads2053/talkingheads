@@ -44,7 +44,7 @@ fi
 echo "Uploading scripts for program '$FILE_NAME'..."
 SCRIPT_DIR="$3"
 if [ -d "$SCRIPT_DIR" ]; then
-    for script in "$SCRIPT_DIR"/*.md; do
+    for script in "$SCRIPT_DIR"/*.*; do
         if [ -f "$script" ]; then
             SCRIPT_NAME=$(basename "$script")
             TARGET_SCRIPT_PATH="~/talkingheads/scripts/$SCRIPT_NAME"
