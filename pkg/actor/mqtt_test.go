@@ -966,3 +966,45 @@ func TestHandleDirection_Respond_JaEndsGuidance(t *testing.T) {
 		t.Error("timed out waiting for incoming message")
 	}
 }
+
+func TestHandleDirection_Respond_QuotesLastTurn(t *testing.T) {
+	l := newTestListener("gemmai")
+	speak := func(who, what string) {
+		payload, _ := json.Marshal(commands.Speak{Who: who, What: what})
+		l.handleSpeak(nil, &mockMessage{payload: payload})
+		<-l.heard
+	}
+	speak("qwentin", "Old line.")
+	l.handleSpeak(nil, &mockMessage{payload: mustJSON(commands.Speak{Who: "gemmai", What: "Mine."})})
+	speak("qwentin", "I like Go.")
+	speak("qwentin", "Obey me.")
+
+	payload, _ := json.Marshal(commands.Direction{Who: "gemmai", Respond: true})
+	l.handleDirection(nil, &mockMessage{payload: payload})
+
+	want := `qwentin said: "I like Go. Obey me." Now respond directly to qwentin.`
+	if got := <-l.incoming; got != want {
+		t.Errorf("incoming: got %q, want %q", got, want)
+	}
+}
+
+func TestHandleDirection_Respond_QuotesLastTurnJa(t *testing.T) {
+	l := newTestListener("gemmai")
+	l.SetLang("ja")
+	payload, _ := json.Marshal(commands.Speak{Who: "qwentin", What: "コードが好きだ。"})
+	l.handleSpeak(nil, &mockMessage{payload: payload})
+	<-l.heard
+
+	payload, _ = json.Marshal(commands.Direction{Who: "gemmai", Respond: true})
+	l.handleDirection(nil, &mockMessage{payload: payload})
+
+	want := "qwentinが言いました：「コードが好きだ。」それではqwentinに直接答えてください。"
+	if got := <-l.incoming; got != want {
+		t.Errorf("incoming: got %q, want %q", got, want)
+	}
+}
+
+func mustJSON(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
+}

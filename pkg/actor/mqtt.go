@@ -32,6 +32,8 @@ type MQTTListener struct {
 	eventsCh       chan<- string
 	lastSpeaker    string
 	lastSpeakerMu  sync.RWMutex
+	turnSpeaker    string
+	lastLines      map[string][]string
 	actorPositions []string
 	lang           string
 
@@ -284,6 +286,9 @@ func (l *MQTTListener) handleDirection(_ mqtt.Client, msg mqtt.Message) {
 			} else {
 				text = endSentence(text, p.sentenceEnd) + fmt.Sprintf(p.respondAlso, target)
 			}
+			if line := l.lastLine(target); line != "" {
+				text = fmt.Sprintf(p.respondQuote, target, line) + text
+			}
 		}
 	}
 
@@ -352,16 +357,25 @@ func (l *MQTTListener) handleSpeak(_ mqtt.Client, msg mqtt.Message) {
 		log.Printf("Failed to unmarshal speak message: %v\n", err)
 		return
 	}
-	// Ignore own messages to avoid self-referential loops.
-	if s.Who == l.name {
-		return
-	}
 	// Ignore thinking phrases — they are filler content spoken while the model
 	// is generating and should not enter other actors' conversation context.
 	if s.Thinking {
 		return
 	}
 	l.lastSpeakerMu.Lock()
+	if s.Who != l.turnSpeaker {
+		if l.lastLines == nil {
+			l.lastLines = make(map[string][]string)
+		}
+		l.lastLines[s.Who] = nil
+		l.turnSpeaker = s.Who
+	}
+	l.lastLines[s.Who] = append(l.lastLines[s.Who], s.What)
+	// Ignore own messages to avoid self-referential loops.
+	if s.Who == l.name {
+		l.lastSpeakerMu.Unlock()
+		return
+	}
 	l.lastSpeaker = s.Who
 	l.lastSpeakerMu.Unlock()
 	if angle, ok := l.lookAngleFor(s.Who); ok {
@@ -376,6 +390,13 @@ func (l *MQTTListener) handleSpeak(_ mqtt.Client, msg mqtt.Message) {
 	}
 	l.rememberHeard(s.What)
 	l.enqueueHeard(fmt.Sprintf(phrasesFor(l.lang).says, s.Who, s.What))
+}
+
+// lastLine returns what who said in their most recent turn.
+func (l *MQTTListener) lastLine(who string) string {
+	l.lastSpeakerMu.RLock()
+	defer l.lastSpeakerMu.RUnlock()
+	return strings.Join(l.lastLines[who], phrasesFor(l.lang).lineJoin)
 }
 
 func (l *MQTTListener) enqueueHeard(text string) {
