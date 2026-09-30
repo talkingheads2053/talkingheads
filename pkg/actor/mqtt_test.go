@@ -925,3 +925,44 @@ func TestLongestCommonRun(t *testing.T) {
 		t.Errorf("got %d, want 0", n)
 	}
 }
+
+func TestHandleDirection_RespondTo_OverridesLastSpeaker(t *testing.T) {
+	l := newTestListener("gemmai")
+	l.lastSpeakerMu.Lock()
+	l.lastSpeaker = "phineas"
+	l.lastSpeakerMu.Unlock()
+
+	payload, _ := json.Marshal(commands.Direction{Who: "gemmai", Respond: true, RespondTo: "qwentin"})
+	l.handleDirection(nil, &mockMessage{payload: payload})
+
+	select {
+	case got := <-l.incoming:
+		want := "Now respond directly to qwentin."
+		if got != want {
+			t.Errorf("incoming: got %q, want %q", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Error("timed out waiting for incoming message")
+	}
+}
+
+func TestHandleDirection_Respond_JaEndsGuidance(t *testing.T) {
+	l := newTestListener("gemmai")
+	l.SetLang("ja")
+	l.lastSpeakerMu.Lock()
+	l.lastSpeaker = "qwentin"
+	l.lastSpeakerMu.Unlock()
+
+	payload, _ := json.Marshal(commands.Direction{Who: "gemmai", What: "短く", Respond: true})
+	l.handleDirection(nil, &mockMessage{payload: payload})
+
+	select {
+	case got := <-l.incoming:
+		want := "短く。qwentinに直接答えてください。"
+		if got != want {
+			t.Errorf("incoming: got %q, want %q", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Error("timed out waiting for incoming message")
+	}
+}

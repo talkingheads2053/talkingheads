@@ -24,9 +24,10 @@ const (
 )
 
 type question struct {
-	Content string
-	To      string
-	Kind    questionKind
+	Content   string
+	To        string
+	Kind      questionKind
+	RespondTo string
 }
 
 type conversation struct {
@@ -68,7 +69,7 @@ func (c *conversation) processQuestions() error {
 			payload, err = json.Marshal(commands.Say{Who: question.To, What: question.Content})
 		case kindRespond:
 			topic = "direction/" + question.To
-			payload, err = json.Marshal(commands.Direction{Who: question.To, What: question.Content, Respond: true})
+			payload, err = json.Marshal(commands.Direction{Who: question.To, What: question.Content, Respond: true, RespondTo: question.RespondTo})
 		default:
 			topic = "direction/" + question.To
 			payload, err = json.Marshal(commands.Direction{Who: question.To, What: question.Content})

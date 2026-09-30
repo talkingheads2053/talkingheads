@@ -82,3 +82,17 @@ func TestHasLatin(t *testing.T) {
 		}
 	}
 }
+
+func TestEndSentence(t *testing.T) {
+	cases := []struct{ in, end, want string }{
+		{"短く", "。", "短く。"},
+		{"短く。", "。", "短く。"},
+		{"本当？", "。", "本当？"},
+		{"keep it brief", "", "keep it brief"},
+	}
+	for _, c := range cases {
+		if got := endSentence(c.in, c.end); got != c.want {
+			t.Errorf("endSentence(%q, %q) = %q, want %q", c.in, c.end, got, c.want)
+		}
+	}
+}

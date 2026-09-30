@@ -48,6 +48,11 @@ Respond direction with optional guidance:
 {"who": "gemmai", "what": "Keep it brief.", "respond": true}
 ```
 
+Respond direction to a named Actor instead of the last speaker:
+```json
+{"who": "gemmai", "respond": true, "respond_to": "qwentin"}
+```
+
 ## Typed input
 
 Type a question into the input field at the bottom of the screen. Each line must be prefixed with an actor name followed by a colon or comma, then press **Enter**:
@@ -69,6 +74,13 @@ Prefix with `respond` to instruct the Actor to reply directly to the last Actor 
 gemmai respond
 gemmai respond: keep it short
 phineas respond keep it philosophical
+```
+
+Name an Actor after `respond`, optionally with `to`, to reply to that Actor instead:
+
+```
+gemmai respond qwentin
+gemmai respond to qwentin keep it short
 ```
 
 ## Hotmic input

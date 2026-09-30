@@ -271,15 +271,18 @@ func (l *MQTTListener) handleDirection(_ mqtt.Client, msg mqtt.Message) {
 
 	text := a.What
 	if a.Respond {
-		l.lastSpeakerMu.RLock()
-		lastSpeaker := l.lastSpeaker
-		l.lastSpeakerMu.RUnlock()
-		if lastSpeaker != "" {
+		target := a.RespondTo
+		if target == "" {
+			l.lastSpeakerMu.RLock()
+			target = l.lastSpeaker
+			l.lastSpeakerMu.RUnlock()
+		}
+		if target != "" {
 			p := phrasesFor(l.lang)
 			if text == "" {
-				text = fmt.Sprintf(p.respondNow, lastSpeaker)
+				text = fmt.Sprintf(p.respondNow, target)
 			} else {
-				text += fmt.Sprintf(p.respondAlso, lastSpeaker)
+				text = endSentence(text, p.sentenceEnd) + fmt.Sprintf(p.respondAlso, target)
 			}
 		}
 	}
