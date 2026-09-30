@@ -5,10 +5,12 @@ package commands
 // When Respond is true the Actor should respond directly to the last Actor
 // that spoke, using What as an optional additional prompt; if What is empty
 // the Actor generates a response based on the conversation context alone.
+// RespondTo names the Actor to respond to instead of the last one that spoke.
 type Direction struct {
-	Who     string `json:"who"`
-	What    string `json:"what"`
-	Respond bool   `json:"respond,omitempty"`
+	Who       string `json:"who"`
+	What      string `json:"what"`
+	Respond   bool   `json:"respond,omitempty"`
+	RespondTo string `json:"respond_to,omitempty"`
 }
 
 // Speak is the payload for the speak/# MQTT topic.

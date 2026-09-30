@@ -86,14 +86,15 @@ func TestStripRespondPrefix(t *testing.T) {
 }
 
 func TestParseTypedInput_RespondKind(t *testing.T) {
-	actors := []string{"gemmai", "phineas"}
+	actors := []string{"gemmai", "phineas", "qwentin"}
 
 	cases := []struct {
-		name        string
-		in          string
-		wantTo      string
-		wantContent string
-		wantKind    questionKind
+		name          string
+		in            string
+		wantTo        string
+		wantContent   string
+		wantKind      questionKind
+		wantRespondTo string
 	}{
 		{
 			name:        "bare respond",
@@ -116,6 +117,28 @@ func TestParseTypedInput_RespondKind(t *testing.T) {
 			wantContent: "now please",
 			wantKind:    kindRespond,
 		},
+		{
+			name:          "respond to actor",
+			in:            "gemmai respond qwentin",
+			wantTo:        "gemmai",
+			wantKind:      kindRespond,
+			wantRespondTo: "qwentin",
+		},
+		{
+			name:          "respond to actor with guidance",
+			in:            "gemmai respond to qwentin keep it short",
+			wantTo:        "gemmai",
+			wantContent:   "keep it short",
+			wantKind:      kindRespond,
+			wantRespondTo: "qwentin",
+		},
+		{
+			name:        "respond to non actor",
+			in:          "gemmai respond to the crowd",
+			wantTo:      "gemmai",
+			wantContent: "to the crowd",
+			wantKind:    kindRespond,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -131,6 +154,9 @@ func TestParseTypedInput_RespondKind(t *testing.T) {
 			}
 			if q.Kind != tc.wantKind {
 				t.Errorf("Kind: got %v, want %v", q.Kind, tc.wantKind)
+			}
+			if q.RespondTo != tc.wantRespondTo {
+				t.Errorf("RespondTo: got %q, want %q", q.RespondTo, tc.wantRespondTo)
 			}
 		})
 	}

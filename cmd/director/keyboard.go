@@ -27,15 +27,33 @@ func parseTypedInput(text string, actorList []string) (question, error) {
 	query := strings.TrimSpace(strings.TrimPrefix(text, first))
 	kind := kindDirection
 	content := query
+	var respondTo string
 	if rest, ok := stripSayPrefix(content); ok {
 		kind = kindSay
 		content = trimSurroundingQuotes(rest)
 	} else if rest, ok := stripRespondPrefix(content); ok {
 		kind = kindRespond
-		content = strings.TrimSpace(rest)
+		respondTo, content = stripRespondTarget(rest, actorList)
 	}
 
-	return question{To: to, Content: content, Kind: kind}, nil
+	return question{To: to, Content: content, Kind: kind, RespondTo: respondTo}, nil
+}
+
+// stripRespondTarget splits an actor name, optionally after "to", off the
+// front of s, as in "qwentin keep it short" or "to qwentin".
+func stripRespondTarget(s string, actorList []string) (string, string) {
+	fields := strings.Fields(s)
+	if len(fields) > 1 && strings.EqualFold(fields[0], "to") {
+		fields = fields[1:]
+	}
+	if len(fields) == 0 {
+		return "", strings.TrimSpace(s)
+	}
+	name := strings.ToLower(strings.TrimRight(fields[0], ":,"))
+	if !slices.Contains(actorList, name) {
+		return "", strings.TrimSpace(s)
+	}
+	return name, strings.Join(fields[1:], " ")
 }
 
 // stripSayPrefix returns the remainder of s with the leading "say" word

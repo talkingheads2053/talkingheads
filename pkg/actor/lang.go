@@ -18,6 +18,8 @@ type phrases struct {
 	thinking     []string
 	// noLatinRewrite keeps a rewritten sentence from starting in Latin letters.
 	noLatinRewrite bool
+	// sentenceEnd ends guidance text before respondAlso is added.
+	sentenceEnd string
 }
 
 var languages = map[string]phrases{
@@ -37,6 +39,7 @@ var languages = map[string]phrases{
 		noWordsSpeak:   "モーションツールを呼び出しましたが、話す言葉がありませんでした。注意：tool_movementのcommand 'speak'は頭の動きの合図で、言葉での返答ではありません。実際の答えを関数ブロックの外に普通の文章で書いてください。今すぐ日本語の話し言葉で答えてください。",
 		thinking:       jaThinkingPhrases,
 		noLatinRewrite: true,
+		sentenceEnd:    "。",
 	},
 }
 
@@ -99,4 +102,17 @@ func hasLatin(s string) bool {
 		}
 	}
 	return false
+}
+
+// endSentence adds end to s unless s already ends a sentence.
+func endSentence(s, end string) string {
+	if end == "" {
+		return s
+	}
+	for _, p := range []string{".", "!", "?", "。", "！", "？"} {
+		if strings.HasSuffix(s, p) {
+			return s
+		}
+	}
+	return s + end
 }
