@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // phrases holds the text the actor sends to the model or speaks in one language.
@@ -14,6 +16,8 @@ type phrases struct {
 	noWords      string
 	noWordsSpeak string
 	thinking     []string
+	// noLatinRewrite keeps a rewritten sentence from starting in Latin letters.
+	noLatinRewrite bool
 }
 
 var languages = map[string]phrases{
@@ -26,12 +30,13 @@ var languages = map[string]phrases{
 		thinking:     defaultThinkingPhrases,
 	},
 	"ja": {
-		respondNow:   "それでは%sに直接答えてください。",
-		respondAlso:  "%sに直接答えてください。",
-		says:         "%sが言いました：%s",
-		noWords:      "モーションツールを呼び出しましたが、話す言葉がありませんでした。実際の答えを普通の文章で書いてください。今すぐ日本語の話し言葉で答えてください。",
-		noWordsSpeak: "モーションツールを呼び出しましたが、話す言葉がありませんでした。注意：tool_movementのcommand 'speak'は頭の動きの合図で、言葉での返答ではありません。実際の答えを関数ブロックの外に普通の文章で書いてください。今すぐ日本語の話し言葉で答えてください。",
-		thinking:     jaThinkingPhrases,
+		respondNow:     "それでは%sに直接答えてください。",
+		respondAlso:    "%sに直接答えてください。",
+		says:           "%sが言いました：%s",
+		noWords:        "モーションツールを呼び出しましたが、話す言葉がありませんでした。実際の答えを普通の文章で書いてください。今すぐ日本語の話し言葉で答えてください。",
+		noWordsSpeak:   "モーションツールを呼び出しましたが、話す言葉がありませんでした。注意：tool_movementのcommand 'speak'は頭の動きの合図で、言葉での返答ではありません。実際の答えを関数ブロックの外に普通の文章で書いてください。今すぐ日本語の話し言葉で答えてください。",
+		thinking:       jaThinkingPhrases,
+		noLatinRewrite: true,
 	},
 }
 
@@ -84,4 +89,14 @@ func phrasesFor(lang string) phrases {
 		return p
 	}
 	return languages["en"]
+}
+
+// hasLatin reports whether s has an ASCII letter.
+func hasLatin(s string) bool {
+	for _, r := range s {
+		if r < utf8.RuneSelf && unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
 }
