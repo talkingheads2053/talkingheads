@@ -12,6 +12,8 @@ import (
 type phrases struct {
 	respondNow   string
 	respondAlso  string
+	respondQuote string
+	lineJoin     string
 	says         string
 	noWords      string
 	noWordsSpeak string
@@ -26,6 +28,8 @@ var languages = map[string]phrases{
 	"en": {
 		respondNow:   "Now respond directly to %s.",
 		respondAlso:  " Respond directly to %s.",
+		respondQuote: "%s said: \"%s\" ",
+		lineJoin:     " ",
 		says:         "%s says: %s",
 		noWords:      "You called motion tools but included no spoken words. You MUST write your actual answer as plain text. Reply now with spoken sentences.",
 		noWordsSpeak: "You called motion tools but included no spoken words. Note: calling tool_movement with command 'speak' is a head-motion cue — it is NOT a verbal response. You MUST write your actual answer as plain text outside any function blocks. Reply now with spoken sentences.",
@@ -34,6 +38,7 @@ var languages = map[string]phrases{
 	"ja": {
 		respondNow:     "それでは%sに直接答えてください。",
 		respondAlso:    "%sに直接答えてください。",
+		respondQuote:   "%sが言いました：「%s」",
 		says:           "%sが言いました：%s",
 		noWords:        "モーションツールを呼び出しましたが、話す言葉がありませんでした。実際の答えを普通の文章で書いてください。今すぐ日本語の話し言葉で答えてください。",
 		noWordsSpeak:   "モーションツールを呼び出しましたが、話す言葉がありませんでした。注意：tool_movementのcommand 'speak'は頭の動きの合図で、言葉での返答ではありません。実際の答えを関数ブロックの外に普通の文章で書いてください。今すぐ日本語の話し言葉で答えてください。",
