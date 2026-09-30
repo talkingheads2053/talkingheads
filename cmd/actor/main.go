@@ -185,6 +185,10 @@ func main() {
 				Usage: "language for the text the actor sends to the model and its thinking phrases (en, ja)",
 				Value: "en",
 			},
+			&cli.StringFlag{
+				Name:  "banner-name",
+				Usage: "katakana name for the startup banner when --lang is ja (defaults to the cast name)",
+			},
 			&cli.BoolFlag{
 				Name:  "verbose",
 				Usage: "enable verbose logging for debugging",
@@ -396,7 +400,7 @@ func run(c *cli.Context) error {
 	// Signal "ready" into the viewport before handing off to the TUI.
 	eventsCh <- "ready"
 
-	m := newTUIModel(makeBanner(name), name, filepath.Base(modelURL), eventsCh, inputCh)
+	m := newTUIModel(makeBanner(name, c.String("banner-name"), lang), name, filepath.Base(modelURL), eventsCh, inputCh)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	// Forward OS signals into the bubbletea program so that Ctrl+C / SIGTERM
