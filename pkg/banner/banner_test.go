@@ -90,3 +90,22 @@ func TestTrimRightLinesPreservesLeading(t *testing.T) {
 		t.Errorf("TrimRightLines(%q) = %q, want %q", in, got, want)
 	}
 }
+
+func TestGenerateKatakana(t *testing.T) {
+	out := GenerateKatakana("ジェマイ")
+	if !strings.HasPrefix(out, "\n") || !strings.HasSuffix(out, "\n") {
+		t.Errorf("GenerateKatakana output should start and end with newline, got %q", out)
+	}
+	if !strings.Contains(out, "#") {
+		t.Errorf("GenerateKatakana output should contain '#' characters, got:\n%s", out)
+	}
+	if GenerateKatakana("ジェマイ") == GenerateKatakana("フィニアス") {
+		t.Error("GenerateKatakana produced identical output for different inputs")
+	}
+}
+
+func TestGenerateKatakanaSkipsUnknown(t *testing.T) {
+	if got, want := GenerateKatakana("ジェabcマイ"), GenerateKatakana("ジェマイ"); got != want {
+		t.Errorf("unknown runes should be skipped, got:\n%s\nwant:\n%s", got, want)
+	}
+}

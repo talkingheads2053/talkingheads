@@ -85,3 +85,17 @@ func writeTempFile(t *testing.T, content string) string {
 	}
 	return f
 }
+
+func TestMakeBannerJa(t *testing.T) {
+	en := makeBanner("gemmai", "", "en")
+	ja := makeBanner("gemmai", "", "ja")
+	if en == ja {
+		t.Error("ja banner should differ from the en banner")
+	}
+	if got := makeBanner("gemmai", "フィニアス", "ja"); got == ja {
+		t.Error("--banner-name should override the cast name")
+	}
+	if got := makeBanner("unknown", "", "ja"); got != makeBanner("unknown", "", "en") {
+		t.Error("unknown actor in ja mode should fall back to the en banner")
+	}
+}
