@@ -49,6 +49,7 @@ One of `--model-url` or `--model-path` is required.
 | `--presence-penalty` | `0.0` | Penalise tokens by presence (`0.0` disables) |
 | `--dry-multiplier` | `0.0` | DRY repetition penalty multiplier (`0.0` disables) |
 | `--max-sentences` | `0` | Cap the number of sentences spoken per turn (`0` = unlimited) |
+| `--repeat-guard` | `0` | Write a sentence again when it shares this many letters in a row with a recent line from any actor, including its own earlier lines (`0` = off). The copy is removed from the model context first, and after 3 tries the reply ends there |
 
 ## Stage positioning
 

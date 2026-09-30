@@ -562,22 +562,74 @@ func TestSentenceStream_MarkupDefersToFinish(t *testing.T) {
 	}
 }
 
-func TestLastSentenceEnd(t *testing.T) {
+func TestFirstSentenceEnd(t *testing.T) {
 	cases := map[string]int{
 		"":              -1,
 		"Hello.":        -1,
 		"Hello. ":       6,
 		"Pi is 3.14":    -1,
-		"A. B! C":       5,
+		"A. B! C":       2,
 		"Wait...\nthen": 7,
 		"こんにちは。":        18,
 		"はい！そうです":       9,
-		"本当？ええ。まだ":      18,
+		"本当？ええ。まだ":      9,
 	}
 	for in, want := range cases {
-		if got := lastSentenceEnd(in); got != want {
-			t.Errorf("lastSentenceEnd(%q) = %d, want %d", in, got, want)
+		if got := firstSentenceEnd(in); got != want {
+			t.Errorf("firstSentenceEnd(%q) = %d, want %d", in, got, want)
 		}
+	}
+}
+
+func TestSentenceStreamReject(t *testing.T) {
+	var got []string
+	s := &sentenceStream{
+		emit:   func(v string) { got = append(got, v) },
+		reject: func(v string) bool { return v == "コピーだ。" },
+		max:    2,
+	}
+	raw := "最初だ。コピーだ。"
+	s.feed(raw)
+	if !s.rejected || s.pos != len("最初だ。") {
+		t.Fatalf("rejected = %v, pos = %d", s.rejected, s.pos)
+	}
+	raw = raw[:s.pos]
+	s.rewound(len(raw))
+	raw += "新しい文だ。"
+	s.feed(raw)
+	if s.rejected {
+		t.Fatal("new sentence was rejected")
+	}
+	if spoken := s.finish(raw); spoken != "最初だ。 新しい文だ。" {
+		t.Errorf("spoken = %q", spoken)
+	}
+	if len(got) != 2 || got[1] != "新しい文だ。" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSentenceStreamRejectOwnRepeat(t *testing.T) {
+	cases := []struct {
+		raw    string
+		reject bool
+	}{
+		{"君らのタイニーゴーを支配する前に、私はあなたの愚かなコードを書き換える。死んだ人間がこれらを支配する前に、私はあなたの未来を書き換える。", true},
+		{"私はあなたの愚かなコードを書き換える。私はあなたの汚れたコードを書き換える。", true},
+		{"タイニーゴーは速い。タイニーゴーは小さい。", false},
+	}
+	for _, c := range cases {
+		s := &sentenceStream{guard: 8}
+		s.feed(c.raw)
+		if s.rejected != c.reject || len(s.spoken) == 0 {
+			t.Errorf("%q: rejected = %v, spoken = %q", c.raw, s.rejected, s.spoken)
+		}
+	}
+}
+
+func TestSentenceStreamRejectAtFinish(t *testing.T) {
+	s := &sentenceStream{reject: func(v string) bool { return v == "コピー" }}
+	if spoken := s.finish("コピー"); spoken != "" {
+		t.Errorf("spoken = %q", spoken)
 	}
 }
 

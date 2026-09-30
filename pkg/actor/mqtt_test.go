@@ -898,3 +898,30 @@ func TestRemoveEmoji(t *testing.T) {
 		}
 	}
 }
+
+func TestRepeatsHeard(t *testing.T) {
+	l := &MQTTListener{}
+	l.SetRepeatGuard(10)
+	l.rememberHeard("君らの愚かな愚か者は、タイニーゴーでコードを書けません。")
+
+	if !l.RepeatsHeard("私はタイニーゴーでコードを書けません。") {
+		t.Error("copied phrase not caught")
+	}
+	if l.RepeatsHeard("タイニーゴーは速いが、君たちの理解力は遅い。") {
+		t.Error("short shared word caught")
+	}
+
+	l.SetRepeatGuard(0)
+	if l.RepeatsHeard("私はタイニーゴーでコードを書けません。") {
+		t.Error("guard is off but sentence caught")
+	}
+}
+
+func TestLongestCommonRun(t *testing.T) {
+	if n := longestCommonRun(letters("Hello, World!"), letters("hello world")); n != 10 {
+		t.Errorf("got %d, want 10", n)
+	}
+	if n := longestCommonRun("", "abc"); n != 0 {
+		t.Errorf("got %d, want 0", n)
+	}
+}

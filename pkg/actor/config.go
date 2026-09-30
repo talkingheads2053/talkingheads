@@ -134,6 +134,9 @@ type Config struct {
 	// beyond the limit are dropped before being emitted to outputFunc.
 	// 0 = unlimited.
 	MaxSentences int
+	// RepeatGuard rewrites a sentence that shares this many letters in a row
+	// with an earlier sentence of the same reply. 0 = off.
+	RepeatGuard int
 	// Lang is the language code for the text the actor sends to the model.
 	Lang string
 }

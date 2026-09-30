@@ -176,6 +176,10 @@ func main() {
 				Usage: "maximum number of sentences spoken per turn; sentences beyond the limit are dropped (0 = unlimited)",
 				Value: actor.DefaultMaxSentences,
 			},
+			&cli.IntFlag{
+				Name:  "repeat-guard",
+				Usage: "rewrite a sentence that shares this many letters in a row with a recent line from any actor, including its own (0 = off)",
+			},
 			&cli.StringFlag{
 				Name:  "lang",
 				Usage: "language for the text the actor sends to the model and its thinking phrases (en, ja)",
@@ -295,6 +299,7 @@ func run(c *cli.Context) error {
 	cfg.DryMultiplier = float32(c.Float64("dry-multiplier"))
 	cfg.ThinkingInterval = c.Int("thinking-interval")
 	cfg.MaxSentences = c.Int("max-sentences")
+	cfg.RepeatGuard = c.Int("repeat-guard")
 	cfg.Verbose = verbose
 	cfg.Lang = lang
 	cfg.ThinkingPhrases = actor.ThinkingPhrasesFor(lang)
@@ -325,6 +330,7 @@ func run(c *cli.Context) error {
 		}()
 		ml.SetEventsCh(eventsCh)
 		ml.SetLang(lang)
+		ml.SetRepeatGuard(c.Int("repeat-guard"))
 		if positions := c.String("actor-positions"); positions != "" {
 			parts := strings.Split(positions, ",")
 			for i, p := range parts {
@@ -377,6 +383,7 @@ func run(c *cli.Context) error {
 		ml.SetPreprocessCallback(a.PreprocessFunc(ctx))
 		a.SetThinkingOutputFunc(thinkingOutputFunc)
 		a.SetSpeakingDoneFunc(ml.WaitSpeakingDoneFunc())
+		a.SetRejectFunc(ml.RepeatsHeard)
 	}
 
 	// Redirect log output: into the viewport when verbose, silenced otherwise.
