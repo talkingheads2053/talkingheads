@@ -52,6 +52,11 @@ func main() {
 						Usage: "VOICEVOX runtime directory created by the VOICEVOX downloader",
 						Value: "./voicevox_core",
 					},
+					&cli.Float64Flag{
+						Name:  "voicevox-speed",
+						Usage: "VOICEVOX speaking speed, 1.0 is normal and lower is slower",
+						Value: 1.0,
+					},
 					&cli.BoolFlag{
 						Name:  "gpu",
 						Usage: "use GPU acceleration for TTS",
@@ -92,6 +97,11 @@ func main() {
 						Usage: "VOICEVOX runtime directory created by the VOICEVOX downloader",
 						Value: "./voicevox_core",
 					},
+					&cli.Float64Flag{
+						Name:  "voicevox-speed",
+						Usage: "VOICEVOX speaking speed, 1.0 is normal and lower is slower",
+						Value: 1.0,
+					},
 					&cli.StringFlag{
 						Name:     "say",
 						Usage:    "text to speak",
@@ -131,7 +141,7 @@ func serveAction(c *cli.Context) error {
 			return cli.Exit(fmt.Sprintf("invalid voice format %q: expected name:lang:model", spec), 1)
 		}
 		name, lang, model := parts[0], parts[1], parts[2]
-		v, err := dialogue.NewVoice(name, lang, model, voiceDataDir(c, lang), gpu)
+		v, err := dialogue.NewVoice(name, lang, model, voiceDataDir(c, lang), gpu, c.Float64("voicevox-speed"))
 		if err != nil {
 			return cli.Exit(fmt.Sprintf("failed to create voice %q: %v", name, err), 1)
 		}
@@ -175,7 +185,7 @@ func sayAction(c *cli.Context) error {
 	gpu := c.Bool("gpu")
 	text := c.String("say")
 
-	v, err := dialogue.NewVoice(name, lang, model, voiceDataDir(c, lang), gpu)
+	v, err := dialogue.NewVoice(name, lang, model, voiceDataDir(c, lang), gpu, c.Float64("voicevox-speed"))
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("failed to create voice: %v", err), 1)
 	}
