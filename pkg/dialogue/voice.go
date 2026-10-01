@@ -36,8 +36,9 @@ type gpuSpeaker interface {
 	UseGPU(bool)
 }
 
-func NewVoice(name, lang, voice, dataDir string, gpu bool) (*Voice, error) {
-	t, err := newSpeaker(lang, voice)
+// NewVoice creates a voice. A speed of 0 or 1 keeps the default VOICEVOX speed.
+func NewVoice(name, lang, voice, dataDir string, gpu bool, speed float64) (*Voice, error) {
+	t, err := newSpeaker(lang, voice, speed)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +52,7 @@ func NewVoice(name, lang, voice, dataDir string, gpu bool) (*Voice, error) {
 	return &Voice{Name: name, t: t, p: getSharedPlayer()}, nil
 }
 
-func newSpeaker(lang, voice string) (gpuSpeaker, error) {
+func newSpeaker(lang, voice string, speed float64) (gpuSpeaker, error) {
 	if lang != Voicevox {
 		return tts.NewPiper(lang, voice), nil
 	}
@@ -60,7 +61,11 @@ func newSpeaker(lang, voice string) (gpuSpeaker, error) {
 	if err != nil {
 		return nil, fmt.Errorf("voicevox voice must be a style id number, got %q", voice)
 	}
-	return tts.NewVoicevox(uint32(style)), nil
+	v := tts.NewVoicevox(uint32(style))
+	if speed > 0 && speed != 1 {
+		v.SetSpeedScale(speed)
+	}
+	return v, nil
 }
 
 var speaking = 0
