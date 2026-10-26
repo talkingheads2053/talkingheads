@@ -25,6 +25,7 @@ Typed commands and voice (hotmic) input work simultaneously in the same session.
 | `--actor` | yes | — | Canonical actor name (repeatable; e.g. `--actor gemmai --actor phineas`) |
 | `--hotmic-model` | no | — | Path to a whisper.cpp GGML model file. **Enables hotmic when set.** |
 | `--hotmic-lang` | no | `auto` | BCP-47 language code for transcription (e.g. `en`), or `auto` |
+| `--hotmic-device` | no | — | Part of the PortAudio input device name to use (e.g. `USB`, `Yeti`); uses the system default when not set |
 | `--hotmic-key` | no | `f5` | bubbletea key name that toggles hotmic recording (e.g. `f5`, `f1`, `ctrl+r`) |
 | `--hotmic-fuzzy-threshold` | no | `0.6` | Maximum Levenshtein distance ratio (0–1) for fuzzy actor name matching |
 | `--hotmic-actor-alias` | no | — | Map alternate spoken names to a canonical actor: `--hotmic-actor-alias "gemmai:jami\|jamai\|jenna"` (repeatable) |
@@ -103,7 +104,7 @@ The spoken actor name is matched using three strategies in order:
 
 ### Japanese
 
-Use `--hotmic-lang ja` with a multilingual whisper model such as `ggml-small.bin`, and add katakana aliases for each actor:
+Use `--hotmic-lang ja` with a multilingual whisper model such as `ggml-medium.bin`, and add katakana aliases for each actor:
 
 ```sh
 --hotmic-lang ja \

@@ -1,22 +1,23 @@
 # pkg/dialogue
 
-Package `dialogue` uses the [sayanything](https://github.com/talkingheads2053/sayanything) package with the [Piper](https://github.com/rhasspy/piper) Text To Speech engine to create audio output for everything said by Actors.
+Package `dialogue` uses the [sayanything](https://github.com/talkingheads2053/sayanything) package with the [Piper](https://github.com/rhasspy/piper) or [VOICEVOX](https://voicevox.hiroshiba.jp/) Text To Speech engine to create audio output for everything said by Actors.
 
 ## Key types
 
 ### `Voice`
 
-Wraps a Piper TTS engine and audio player for a named speaker.
+Wraps a Piper or VOICEVOX TTS engine and audio player for a named speaker.
 
 ```go
-v, err := dialogue.NewVoice(name, lang, voiceModel, dataDir, gpu)
+v, err := dialogue.NewVoice(name, lang, voiceModel, dataDir, gpu, speed)
 ```
 
 - `name` — speaker identifier matched against the `who` field in MQTT messages
-- `lang` — language code (e.g. `en_US`)
-- `voiceModel` — voice model name (e.g. `en_US-joe-medium`)
-- `dataDir` — path to the directory containing `.onnx` model files
+- `lang` — language code (e.g. `en_US`), or `voicevox`
+- `voiceModel` — voice model name (e.g. `en_US-joe-medium`), or a VOICEVOX style id
+- `dataDir` — directory with the `.onnx` model files, or the VOICEVOX runtime directory
 - `gpu` — enable GPU acceleration
+- `speed` — VOICEVOX speaking speed (`1.0` is normal)
 
 | Method | Description |
 |---|---|
@@ -28,7 +29,7 @@ v, err := dialogue.NewVoice(name, lang, voiceModel, dataDir, gpu)
 Subscribes to `speak/#` on an MQTT broker and routes each message to the matching `Voice`.
 
 ```go
-listener, err := dialogue.NewListener(clientID, brokerURL, voices)
+listener, err := dialogue.NewListener(clientID, brokerURL, voices, verbose)
 listener.Listen() // blocks
 ```
 

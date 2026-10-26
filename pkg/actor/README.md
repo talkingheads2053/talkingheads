@@ -1,7 +1,6 @@
 # pkg/actor
 
-Package `actor` manages the conversation loop with the language model and exposes tool calls that control the actor's physical head 
-movement.
+Package `actor` manages the conversation loop with the language model and exposes tool calls that control the actor's physical head movement.
 
 ## Key types
 
@@ -10,10 +9,11 @@ movement.
 Created with `NewActor`. Runs a conversation loop against the configured model, dispatching any tool calls the model emits to the registered tools.
 
 ```go
-a, err := actor.NewActor(mp, commander, moreFunc, outputFunc)
+a, err := actor.NewActor(mp, cfg, commander, moreFunc, outputFunc)
 ```
 
 - `mp` — path to the model file(s)
+- `cfg` — `Config` with sampling, model format, stage, and language settings (start from `DefaultConfig()`)
 - `commander` — where action commands are sent (`nil` logs to console)
 - `moreFunc` — called each turn to append new user input to the conversation
 - `outputFunc` — called with each text response from the model
@@ -61,7 +61,28 @@ With `--model-format lfm` the reply streams with its tool calls cut out. Each ca
 
 Each time the actor hears another actor, it runs a short reaction that may only write tool calls, such as `listen` facing the speaker. The calls run when the heard line starts playing, and are dropped if the speaker already stopped. A direction arriving stops the reaction. `--react=false` turns this off.
 
-Thinking phrases keep going until the first sentence of the reply is ready, since the reply starts with tool calls.
+Thinking phrases keep going until the first sentence of the reply is ready, since the reply starts with tool calls. When another actor starts a thinking phrase, this actor turns to `listen` to them.
+
+LFM is detected from the model architecture when `--model-format` is `auto`.
+
+```mermaid
+sequenceDiagram
+participant model as Model
+participant actor as Actor
+participant mqtt as MQTT broker
+participant dialogue as Dialogue
+participant head as The Head
+model->>actor: tool call, then sentence
+actor->>actor: cue the tool call for the sentence
+actor->>mqtt: speak/gemmai
+mqtt->>dialogue: speak/gemmai
+dialogue->>mqtt: speaking/gemmai speaking
+mqtt->>actor: speaking/gemmai speaking
+actor->>head: look and speak over serial
+dialogue->>mqtt: speaking/gemmai stopped
+mqtt->>actor: speaking/gemmai stopped
+actor->>head: stop after one second of quiet
+```
 
 ## Serial protocol
 
@@ -98,12 +119,16 @@ The Director publishes a `Direction` payload to `direction/<name>` to prompt the
 | `who` | string | Name of the Actor being directed |
 | `what` | string | The prompt or guidance text (may be empty) |
 | `respond` | bool | `true` to instruct the Actor to respond to the last Actor it heard speak; omitted (false) for a normal direction |
+| `respond_to` | string | Actor to respond to instead of the last speaker; only used with `respond` |
 
-When `respond` is `true` the Actor builds the direction text automatically:
+When `respond` is `true` the Actor builds the direction text automatically. The target is `respond_to`, or the last speaker when it is empty:
 
-- If a previous speaker is known and `what` is empty → `"Now respond directly to <lastSpeaker>."`
-- If a previous speaker is known and `what` is non-empty → `"<what> Respond directly to <lastSpeaker>."`
-- If no speaker has been heard yet → `what` is used as-is.
+- If a target is known and `what` is empty → `"Now respond directly to <target>."`
+- If a target is known and `what` is non-empty → `"<what> Respond directly to <target>."`
+- If the target has spoken, their last line is quoted first → `<target> said: "<line>" `
+- If no target is known → `what` is used as-is.
+
+With `--lang ja` the same text is sent in Japanese.
 
 The Actor tracks the last non-thinking speaker internally, updated each time a `speak/#` message with `thinking: false` arrives.
 
