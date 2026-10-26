@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/talkingheads2053/talkingheads/pkg/commands"
 	"github.com/talkingheads2053/talkingheads/pkg/hotmic"
 )
 
@@ -251,6 +252,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── question confirmation ─────────────────────────────────────────────────
 	case questionSentMsg:
+		if msg.q.Kind == kindDance {
+			m.appendLine(sentStyle.Render(danceLabel(msg.q.Music)))
+			m.vp, vpCmd = m.vp.Update(msg)
+			return m, vpCmd
+		}
 		label := "→"
 		if msg.q.Kind == kindSay {
 			label = "say →"
@@ -264,6 +270,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.vp, vpCmd = m.vp.Update(msg)
 	m.input, inputCmd = m.input.Update(msg)
 	return m, tea.Batch(vpCmd, inputCmd)
+}
+
+func danceLabel(music commands.Music) string {
+	switch music.Command {
+	case commands.MusicLoad:
+		return fmt.Sprintf("♪ load %s at %g bpm, first beat at %gs", music.File, music.BPM, music.Offset)
+	case commands.MusicPlay:
+		return "♪ start dancing"
+	default:
+		return "♪ stop dancing"
+	}
 }
 
 // appendLine adds a line to the viewport content and scrolls to the bottom.

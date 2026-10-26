@@ -61,6 +61,11 @@ func main() {
 						Name:  "gpu",
 						Usage: "use GPU acceleration for TTS",
 					},
+					&cli.StringFlag{
+						Name:  "music",
+						Usage: "directory with the wav or mp3 songs that Director can play",
+						Value: "./music",
+					},
 				},
 				Action: serveAction,
 			},
@@ -157,6 +162,10 @@ func serveAction(c *cli.Context) error {
 
 	eventsCh := make(chan string, 64)
 	listener.SetEventsCh(eventsCh)
+
+	if _, err := dialogue.NewMusic(listener, c.String("music")); err != nil {
+		return cli.Exit(err, 1)
+	}
 
 	go listener.Listen()
 

@@ -307,6 +307,10 @@ func NewMQTTListener(name, server string, verbose bool) (*MQTTListener, error) {
 	if verbose {
 		log.Printf("Subscribed to speaking/#\n")
 	}
+	if err := subscribe(client, "dance", l.handleDance); err != nil {
+		client.Disconnect(250)
+		return nil, err
+	}
 
 	return l, nil
 }
@@ -394,6 +398,23 @@ func (l *MQTTListener) handleSpeakingStatus(_ mqtt.Client, msg mqtt.Message) {
 	}
 	if s.Status == commands.StatusStopped && l.movement != nil {
 		l.movement.RestSoon()
+	}
+}
+
+func (l *MQTTListener) handleDance(_ mqtt.Client, msg mqtt.Message) {
+	var d commands.Dance
+	if err := json.Unmarshal(msg.Payload(), &d); err != nil {
+		log.Printf("Failed to unmarshal dance message: %v\n", err)
+		return
+	}
+	if l.movement == nil {
+		return
+	}
+	switch d.Status {
+	case commands.StatusDancing:
+		l.movement.Dance(d.Beat)
+	case commands.StatusStopped:
+		l.movement.StopDance()
 	}
 }
 

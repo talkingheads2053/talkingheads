@@ -101,3 +101,33 @@ func TestDirection_Respond_FalseWhenAbsentInJSON(t *testing.T) {
 		t.Errorf("expected Respond to be false when absent in JSON, got true")
 	}
 }
+
+func TestMusic_RoundTrip(t *testing.T) {
+	original := Music{Command: MusicLoad, File: "song.wav", BPM: 120, Offset: 0.5}
+	b, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var decoded Music
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if decoded != original {
+		t.Errorf("got %+v, want %+v", decoded, original)
+	}
+}
+
+func TestDance_RoundTrip(t *testing.T) {
+	original := Dance{Status: StatusDancing, Beat: 7}
+	b, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var decoded Dance
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if decoded != original {
+		t.Errorf("got %+v, want %+v", decoded, original)
+	}
+}

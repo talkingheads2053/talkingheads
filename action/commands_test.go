@@ -97,7 +97,7 @@ func TestProcessCommand_Stop(t *testing.T) {
 
 func TestProcessCommand_UnknownCommand(t *testing.T) {
 	resetState()
-	if err := processCommand("dance"); err != errUnknownCommand {
+	if err := processCommand("jump"); err != errUnknownCommand {
 		t.Errorf("err = %v, want errUnknownCommand", err)
 	}
 }
@@ -202,5 +202,32 @@ func TestProcessCommand_DoubleTakeMissingAngle(t *testing.T) {
 	resetState()
 	if err := processCommand("doubletake"); err != errAngleRequired {
 		t.Errorf("err = %v, want errAngleRequired", err)
+	}
+}
+
+func TestProcessCommand_Dance(t *testing.T) {
+	resetState()
+	if err := processCommand("dance 60"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if getMode() != StateDancing {
+		t.Errorf("mode = %q, want %q", getMode(), StateDancing)
+	}
+	if targetAngle != 60 {
+		t.Errorf("targetAngle = %d, want 60", targetAngle)
+	}
+}
+
+func TestProcessCommand_DanceMissingAngle(t *testing.T) {
+	resetState()
+	if err := processCommand("dance"); err != errAngleRequired {
+		t.Errorf("err = %v, want errAngleRequired", err)
+	}
+}
+
+func TestProcessCommand_DanceInvalidAngle(t *testing.T) {
+	resetState()
+	if err := processCommand("dance left"); err != errInvalidAngle {
+		t.Errorf("err = %v, want errInvalidAngle", err)
 	}
 }
