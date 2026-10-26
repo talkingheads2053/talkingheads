@@ -167,8 +167,8 @@ github.com/spiffe/go-spiffe/v2 v2.8.1 h1:eXZMLsu+3MLEPJyGJkolqtVrteZfQdUpOWj6LTi
 github.com/spiffe/go-spiffe/v2 v2.8.1/go.mod h1:47Q0Q9/AqGha8QLHp+kxpH4Wca7X7EnOtlIJy3mxZ3U=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/talkingheads2053/sayanything v0.1.1-0.20261026190848-38a8dd40b9c4 h1:x1sjUYyd54IDyvuXilCNUyTVMDETTF+pPYiaKiZ2Uk0=
-github.com/talkingheads2053/sayanything v0.1.1-0.20261026190848-38a8dd40b9c4/go.mod h1:/wT0tNClFsmTyJhRlVUL2mqQ3jbF5B1yC1vtlPTuWKg=
+github.com/talkingheads2053/sayanything v0.1.1-0.20261026191312-88d05b731b18 h1:vFOyHgIHbGAgin9jEZXenGjtYrOcbeae2fz4Yrv0Bv0=
+github.com/talkingheads2053/sayanything v0.1.1-0.20261026191312-88d05b731b18/go.mod h1:/wT0tNClFsmTyJhRlVUL2mqQ3jbF5B1yC1vtlPTuWKg=
 github.com/tosone/minimp3 v1.0.1 h1:5ajMIgZKlQqJdX3KJj/wb0o1oNef9S3fuLr9T5YwQqw=
 github.com/tosone/minimp3 v1.0.1/go.mod h1:WFso0UvZL1fPit45V6RQPKxbehLI4XZaJyLs2/TJHoU=
 github.com/ulikunitz/xz v0.5.16 h1:ld6NyySjx5lowVKwJvMRLnW5nxKX/xnpSiFYZ/Lxur0=
