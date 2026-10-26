@@ -71,6 +71,14 @@ Moves the head right or left about twice a second while speaking. The head LEDs 
 
 Moves the head back and forth 3 times to indicate a "No" response, then stops at center. The head LEDs turn red.
 
+### `dance [angle]`
+
+Turns the head to an angle right away and holds still there until the next `dance` command. Actor sends one on every beat of a song. The head LEDs alternate colors and the matrix shows a VU meter.
+
+```
+dance 60
+```
+
 ### `stop`
 
 Stops moving and returns the head to center.
@@ -96,3 +104,5 @@ Actor turns each `tool_movement` call from the model into these commands. See [p
 | `doubletake` | `doubletake <angle>` |
 | `facecrowd` | `slowlook 90` |
 | `headshake` | `headshake` |
+
+While the heads dance, Actor skips movement calls from the model and sends `dance 60` and `dance 120` on alternate beats instead.

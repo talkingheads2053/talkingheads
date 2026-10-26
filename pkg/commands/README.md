@@ -41,6 +41,22 @@ const (
     StatusSpeaking = "speaking"
     StatusStopped  = "stopped"
 )
+
+// Music is the payload for the music MQTT topic.
+// Command is MusicLoad, MusicPlay or MusicStop. Offset is the seconds to the first beat.
+type Music struct {
+    Command string  `json:"command"`
+    File    string  `json:"file,omitempty"`
+    BPM     float64 `json:"bpm,omitempty"`
+    Offset  float64 `json:"offset,omitempty"`
+}
+
+// Dance is the payload for the dance MQTT topic.
+// Status is StatusDancing on every beat, or StatusStopped when the song ends.
+type Dance struct {
+    Status string `json:"status"`
+    Beat   int    `json:"beat,omitempty"`
+}
 ```
 
 ## MQTT topics
@@ -51,6 +67,8 @@ const (
 | `speak/#` | → Dialogue & Actors | Actor | Dialogue, Actor | Messages spoken by an Actor |
 | `say/#` | → Dialogue | Director / external | Dialogue | Speak text via the named voice without affecting Actor conversation history |
 | `speaking/#` | → Actors | Dialogue | Actor | Notifications when speaking starts and stops |
+| `music` | → Dialogue | Director | Dialogue | Load, play, or stop a song |
+| `dance` | → Actors | Dialogue | Actor | A beat of the song that is playing, or that it stopped |
 
 ### `direction/#`
 
@@ -119,4 +137,44 @@ Notifications from Dialogue to Actors when speaking starts and stops. The `statu
     "who": "qwentin",
     "status": "speaking"
 }
+```
+
+### `music`
+
+Load a song from the Dialogue music directory, with its tempo and the seconds to the first beat.
+
+```json
+{
+    "command": "load",
+    "file": "song.wav",
+    "bpm": 120,
+    "offset": 0.4
+}
+```
+
+Then start or stop it.
+
+```json
+{"command": "play"}
+```
+
+```json
+{"command": "stop"}
+```
+
+### `dance`
+
+Published by Dialogue on every beat of the song, counting from 1.
+
+```json
+{
+    "status": "dancing",
+    "beat": 1
+}
+```
+
+Published once when the song ends or is stopped.
+
+```json
+{"status": "stopped"}
 ```

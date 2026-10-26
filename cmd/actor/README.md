@@ -84,6 +84,8 @@ With an LFM model (`--model-format lfm`, or detected automatically) each movemen
 
 When another actor starts a thinking phrase, this actor turns to listen to them. When nothing is spoken for a second the head rests.
 
+When Director starts a song with `dance start`, the head swings left and right on each beat until the song stops. The model can still talk while it dances.
+
 ## Thinking phrases
 
 As soon as a direction arrives, the actor speaks a randomly chosen *thinking phrase* (e.g. `"let me think about that for a moment..."`) to mask the inference startup latency. Additional phrases are emitted at roughly `--thinking-interval` second intervals until the first sentence of the reply is ready. Each phrase waits for the one before it to finish playing.
