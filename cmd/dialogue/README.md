@@ -20,6 +20,7 @@ dialogue serve --server tcp://localhost:1883 \
 | `--voice` | `-v` | *(required, repeatable)* | Voice in `name:lang:model` format, or `name:voicevox:<style id>` |
 | `--data` | `-d` | `./voices` | Directory containing `.onnx` voice model files |
 | `--voicevox-data` | | `./voicevox_core` | VOICEVOX runtime directory |
+| `--voicevox-speed` | | `1.0` | VOICEVOX speaking speed (`1.0` is normal, lower is slower) |
 | `--gpu` | | `false` | Enable GPU acceleration for TTS |
 
 ### `say`
@@ -37,8 +38,10 @@ dialogue say --name llama3000 --lang en_US --voice joe-medium --say "Hello world
 | `--voice` | `-v` | *(required)* | Voice model name, or style id for `voicevox` |
 | `--data` | `-d` | `./voices` | Directory containing `.onnx` voice model files |
 | `--voicevox-data` | | `./voicevox_core` | VOICEVOX runtime directory |
+| `--voicevox-speed` | | `1.0` | VOICEVOX speaking speed (`1.0` is normal, lower is slower) |
 | `--say` | | *(required)* | Text to speak |
 | `--gpu` | | `false` | Enable GPU acceleration |
+| `--verbose` | `-V` | `false` | Verbose logging |
 
 ## MQTT message format
 
@@ -83,5 +86,7 @@ For Japanese, use `voicevox` as the language and a style id as the voice. Instal
 ```shell
 dialogue say --name gemmai --lang voicevox --voice 2 --voicevox-data ~/voicevox_core --say "こんにちは"
 ```
+
+Japanese voices can sound fast. Use `--voicevox-speed` to slow them down, for example `--voicevox-speed 0.85`.
 
 If the style id is not installed, the error lists the styles that are available. The VOICEVOX terms require a credit for each character used, for example "VOICEVOX:四国めたん".

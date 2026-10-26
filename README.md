@@ -58,6 +58,8 @@ speaking-- subscribe -->actors
 
 Actor runs on the Linux part of an Arduino UNO Q board. It is written in Go with [yzma](https://github.com/hybridgroup/yzma) to perform local inference using [llama.cpp](https://github.com/ggml-org/llama.cpp). It communicates with other Actors by publishing and subscribing to [MQTT](https://mqtt.org/) messages.
 
+The model moves the head with `tool_movement` calls such as `talk`, `listen`, and `look` at another actor or the audience. With LFM models each call is held until Dialogue starts playing the sentence it belongs to, so the head moves in time with the voice. Actors can run in English or Japanese with `--lang`.
+
 ```mermaid
 flowchart LR
 subgraph mqtt broker
@@ -68,9 +70,10 @@ end
 subgraph Actor
     subgraph actor
         run
+        cues[movement cues]
     end
     subgraph tools
-        run<-->movement
+        movement[tool_movement]
     end
     subgraph yzma
         run<-->llama.cpp
@@ -79,7 +82,9 @@ subgraph Actor
     direction-- subscribe -->run
     run-- publish -->speak
     speak-- subscribe -->run
-    speaking-- subscribe -->run
+    run-- tool calls -->cues
+    speaking-- subscribe -->cues
+    cues-->movement
 end
 subgraph The Head
     movement<-- UART -->actions
@@ -113,7 +118,7 @@ end
 
 ![director application](./images/director.png)
 
-Director runs on a separate computer that is connected to the same local network as the MQTT broker. It uses [ardanlabs/bucky](https://github.com/ardanlabs/bucky) with a local [whisper.cpp](https://github.com/ggml-org/whisper.cpp) shared library to perform "push to talk" to communicate with Actors.
+Director runs on a separate computer that is connected to the same local network as the MQTT broker. It uses [ardanlabs/bucky](https://github.com/ardanlabs/bucky) with a local [whisper.cpp](https://github.com/ggml-org/whisper.cpp) shared library to perform "push to talk" to communicate with Actors. It can also tell an Actor to respond to another Actor by name.
 
 ```mermaid
 flowchart LR
@@ -138,7 +143,7 @@ director -- publish --> say
 
 ![dialogue application](./images/dialogue.png)
 
-Dialogue runs on a separate computer that is connected to the same local network as the MQTT broker. It uses the [sayanything](https://github.com/talkingheads2053/sayanything) package with the [Piper](https://github.com/rhasspy/piper) Text To Speech engine to create audio output for everything said by Actors.
+Dialogue runs on a separate computer that is connected to the same local network as the MQTT broker. It uses the [sayanything](https://github.com/talkingheads2053/sayanything) package with the [Piper](https://github.com/rhasspy/piper) Text To Speech engine for English, or [VOICEVOX](https://voicevox.hiroshiba.jp/) for Japanese, to create audio output for everything said by Actors.
 
 ```mermaid
 flowchart LR
@@ -152,6 +157,7 @@ subgraph dialogue
     say-- subscribe -->sayanything
     subgraph sayanything
         piper-->tts[Text To Speech model]
+        voicevox-->tts
     end
     subgraph portaudio
         tts-- WAV -->speaker
@@ -177,9 +183,10 @@ end
 subgraph Actor
     subgraph actor
         run
+        cues[movement cues]
     end
     subgraph tools
-        run<-->movement
+        movement[tool_movement]
         movement-- UART -->actions
     end
     subgraph yzma
@@ -189,13 +196,16 @@ subgraph Actor
     direction-- subscribe -->run
     run-- publish -->speak
     speak-- subscribe -->run
-    speaking-- subscribe -->run
+    run-- tool calls -->cues
+    speaking-- subscribe -->cues
+    cues-->movement
 end
 subgraph dialogue
     speak-- subscribe -->sayanything
     say-- subscribe -->sayanything
     subgraph sayanything
         piper-->tts[Text To Speech model]
+        voicevox-->tts
     end
     subgraph portaudio
         tts-- WAV -->speaker
@@ -217,7 +227,9 @@ director -- publish --> say
 
 ## Models
 
-The best performing model being used for fine tuning the Actors is currently the gemma3 270M parameter instruction tuned model. Typically the Q4K_M variation has had the best tradeoff of t/s and staying in character.
+The Actors use small fine tuned models. The gemma3 270M parameter instruction tuned model has worked well, and the Q4_K_M variation has had the best tradeoff of t/s and staying in character.
+
+LFM2 and LFM2.5 models are also supported with `--model-format lfm`, which is detected automatically from the model. With them each head movement runs when its sentence starts playing, so it matches the voice.
 
 ## MQTT broker
 
@@ -234,3 +246,9 @@ https://github.com/OHF-Voice/piper1-gpl
 - download binary
 - add to path
 - download voice models to `./voices`
+
+## VOICEVOX TTS Engine
+
+https://github.com/hybridgroup/voicevox#installation
+
+Used by Dialogue for Japanese voices. See [cmd/dialogue](./cmd/dialogue/README.md#voicevox).

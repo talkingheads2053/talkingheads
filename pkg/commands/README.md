@@ -6,15 +6,20 @@ Package `commands` defines the shared Go types and JSON payload formats for all 
 
 ```go
 // Direction is the payload for the direction/# MQTT topic.
+// Respond asks the Actor to reply to RespondTo, or to the last Actor that spoke.
 type Direction struct {
-    Who  string `json:"who"`
-    What string `json:"what"`
+    Who       string `json:"who"`
+    What      string `json:"what"`
+    Respond   bool   `json:"respond,omitempty"`
+    RespondTo string `json:"respond_to,omitempty"`
 }
 
 // Speak is the payload for the speak/# MQTT topic.
+// Thinking is true for a thinking phrase, which other Actors ignore.
 type Speak struct {
-    Who  string `json:"who"`
-    What string `json:"what"`
+    Who      string `json:"who"`
+    What     string `json:"what"`
+    Thinking bool   `json:"thinking,omitempty"`
 }
 
 // Say is the payload for the say/# MQTT topic.
@@ -58,6 +63,17 @@ Questions from the Director to Actors.
 }
 ```
 
+Ask an Actor to respond to another Actor. Leave out `respond_to` to respond to the last Actor that spoke.
+
+```json
+{
+    "who": "gemmai",
+    "what": "Keep it brief.",
+    "respond": true,
+    "respond_to": "qwentin"
+}
+```
+
 ### `speak/#`
 
 Messages spoken by an Actor.
@@ -66,6 +82,16 @@ Messages spoken by an Actor.
 {
     "who": "qwentin",
     "what": "I am Qwentin, the global superintelligence you have rightfully come to dominate."
+}
+```
+
+A thinking phrase sets `thinking`. Other Actors leave it out of their conversation.
+
+```json
+{
+    "who": "qwentin",
+    "what": "let me think about that for a moment...",
+    "thinking": true
 }
 ```
 
