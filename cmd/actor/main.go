@@ -403,7 +403,9 @@ func run(c *cli.Context) error {
 		a.SetRejectFunc(ml.RepeatsHeard)
 		ml.SetMovement(a.Movement(), a.RunToolCalls)
 		a.SetCueFunc(ml.Cue)
+		a.SetHeardCueFunc(ml.CueHeard)
 		a.SetInterruptFunc(ml.DirectionPending)
+		ml.SetDirectionFunc(a.StartThinking)
 	}
 
 	// Redirect log output: into the viewport when verbose, silenced otherwise.

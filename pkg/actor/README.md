@@ -51,7 +51,7 @@ Registered automatically by `NewActor`. The model makes every head movement with
 
 Special moves run at most once per show, with at least `--interjection-gap` between any two. A refused one turns into a plain `look`, or nothing for `headshake`.
 
-The current mode is sent again every 2 seconds, because the firmware stops after 5 seconds without a command. When nothing is spoken for a few seconds the head gets `stop` and rests.
+The current mode is sent again every 2 seconds, because the firmware stops after 5 seconds without a command. When nothing is spoken for a second the head gets `stop` and rests. If a phrase then starts, the head picks up `talk` or `listen` again.
 
 Angle convention: `0` = full right, `90` = center, `180` = full left.
 
@@ -59,7 +59,9 @@ Angle convention: `0` = full right, `90` = center, `180` = full left.
 
 With `--model-format lfm` the reply streams with its tool calls cut out. Each call runs when the sentence after it starts playing, so the movement matches the voice. Calls with no sentence after them run at once.
 
-Each time the actor hears another actor, it runs a short reaction that may only write tool calls, such as `listen` facing the speaker. A direction arriving stops the reaction. `--react=false` turns this off.
+Each time the actor hears another actor, it runs a short reaction that may only write tool calls, such as `listen` facing the speaker. The calls run when the heard line starts playing, and are dropped if the speaker already stopped. A direction arriving stops the reaction. `--react=false` turns this off.
+
+Thinking phrases keep going until the first sentence of the reply is ready, since the reply starts with tool calls.
 
 ## Serial protocol
 

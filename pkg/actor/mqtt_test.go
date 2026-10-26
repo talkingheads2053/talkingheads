@@ -69,16 +69,18 @@ func TestHandleSpeakingStatus_RunsCuedCallsInOrder(t *testing.T) {
 	})
 
 	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "talk"})})
-	l.takeCue()
-	l.takeCue() // a thinking phrase with no calls
+	l.takeCue(false)
+	l.takeCue(false) // a phrase with no calls
 	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "look"})})
-	l.takeCue()
+	l.takeCue(false)
 
 	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusSpeaking))
 	if strings.Join(ran, ",") != "talk" {
 		t.Fatalf("after first phrase ran %v, want [talk]", ran)
 	}
+	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusStopped))
 	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusSpeaking))
+	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusStopped))
 	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusSpeaking))
 	if strings.Join(ran, ",") != "talk,look" {
 		t.Errorf("ran %v, want [talk look]", ran)
@@ -93,13 +95,98 @@ func TestHandleSpeakingStatus_SkipsDroppedPhrase(t *testing.T) {
 	})
 
 	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "talk"})})
-	l.takeCue().dropped = true
+	l.takeCue(false).dropped = true
 	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "look"})})
-	l.takeCue()
+	l.takeCue(false)
 
 	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusSpeaking))
 	if strings.Join(ran, ",") != "look" {
 		t.Errorf("ran %v, want [look]", ran)
+	}
+}
+
+func TestHandleSpeakingStatus_RepeatedSpeakingIsOnePhrase(t *testing.T) {
+	l := newTestListener("gemmai")
+	var ran []string
+	l.SetMovement(nil, func(calls []message.ToolCall) {
+		ran = append(ran, calls[0].Function.Arguments["command"])
+	})
+
+	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "talk"})})
+	l.takeCue(false)
+	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "look"})})
+	l.takeCue(false)
+
+	for range 5 {
+		l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusSpeaking))
+	}
+	if strings.Join(ran, ",") != "talk" {
+		t.Errorf("ran %v, want [talk] until the first phrase stops", ran)
+	}
+}
+
+func TestTakeCue_ThinkingLeavesCalls(t *testing.T) {
+	l := newTestListener("gemmai")
+	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "talk"})})
+
+	if p := l.takeCue(true); len(p.calls) != 1 || p.calls[0].Function.Arguments["command"] != CommandTalk || p.calls[0].Function.Arguments["target"] != Audience {
+		t.Errorf("thinking phrase got %v, want only its own talk call", p.calls)
+	}
+	if p := l.takeCue(false); len(p.calls) != 1 {
+		t.Errorf("reply got %v, want the talk call", p.calls)
+	}
+}
+
+func speakMsg(who, what string, thinking bool) *mockMessage {
+	payload, _ := json.Marshal(commands.Speak{Who: who, What: what, Thinking: thinking})
+	return &mockMessage{payload: payload, topic: "speak/" + who}
+}
+
+func TestCueHeard_WaitsForTheLineToPlay(t *testing.T) {
+	l := newTestListener("gemmai")
+	var ran []string
+	l.SetMovement(nil, func(calls []message.ToolCall) {
+		ran = append(ran, calls[0].Function.Arguments["command"])
+	})
+	listen := []message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "listen", "target": "phineas"})}
+
+	l.handleSpeak(nil, speakMsg("phineas", "Hmm.", true))
+	l.handleSpeak(nil, speakMsg("phineas", "Hello there.", false))
+	l.CueHeard(listen)
+	if len(ran) != 0 {
+		t.Fatalf("ran %v before the line played", ran)
+	}
+
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusSpeaking))
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusStopped))
+	if strings.Join(ran, ",") != "listen" {
+		t.Fatalf("ran %v, want [listen] for the thinking phrase", ran)
+	}
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusSpeaking))
+	if strings.Join(ran, ",") != "listen,listen" {
+		t.Errorf("ran %v, want a second listen when the line plays", ran)
+	}
+}
+
+func TestCueHeard_LateReaction(t *testing.T) {
+	l := newTestListener("gemmai")
+	var ran []string
+	l.SetMovement(nil, func(calls []message.ToolCall) {
+		ran = append(ran, calls[0].Function.Arguments["command"])
+	})
+	listen := []message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "listen", "target": "phineas"})}
+
+	l.handleSpeak(nil, speakMsg("phineas", "Hello there.", false))
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusSpeaking))
+	l.CueHeard(listen)
+	if strings.Join(ran, ",") != "listen" {
+		t.Fatalf("ran %v, want [listen] while the line plays", ran)
+	}
+
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusStopped))
+	l.CueHeard(listen)
+	if strings.Join(ran, ",") != "listen" {
+		t.Errorf("ran %v, a reaction after the line ended should be dropped", ran)
 	}
 }
 
@@ -934,4 +1021,77 @@ func TestHandleDirection_Respond_QuotesLastTurnJa(t *testing.T) {
 func mustJSON(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+func TestHasSpeech(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"":                                 false,
+		lfmCall(`command="listen"`):        false,
+		lfmCall(`command="listen"`) + "  ": false,
+		lfmCallStart + "[tool_movement(":   false,
+		lfmCall(`command="talk"`) + "Hi":   true,
+		"Hi " + lfmCall(`command="talk"`):  true,
+	} {
+		if got := hasSpeech(raw); got != want {
+			t.Errorf("hasSpeech(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+func TestHandleDirection_CallsDirectionFunc(t *testing.T) {
+	l := newTestListener("gemmai")
+	called := false
+	l.SetDirectionFunc(func() { called = true })
+
+	payload, _ := json.Marshal(commands.Direction{Who: "gemmai", What: "hello"})
+	l.handleDirection(nil, &mockMessage{payload: payload})
+
+	if !called {
+		t.Error("direction func not called")
+	}
+}
+
+func TestHandleSpeakingStatus_WakesRestingHead(t *testing.T) {
+	mc := &syncCommander{}
+	m := NewMovement(mc, MovementOptions{Stage: Stage{Self: "gemmai", Positions: []string{"gemmai", "phineas"}}})
+	m.restAfter = 10 * time.Millisecond
+	l := newTestListener("gemmai")
+	l.SetMovement(m, func(calls []message.ToolCall) {
+		for _, c := range calls {
+			m.Call(context.Background(), c)
+		}
+	})
+
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusSpeaking))
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusStopped))
+	time.Sleep(50 * time.Millisecond)
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusSpeaking))
+
+	want := "look 150,stop,look 150"
+	if got := strings.Join(mc.sent(), ","); got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestHandleSpeakingStatus_PhraseStartCancelsRest(t *testing.T) {
+	mc := &syncCommander{}
+	m := NewMovement(mc, MovementOptions{})
+	m.restAfter = 30 * time.Millisecond
+	l := newTestListener("gemmai")
+	l.SetMovement(m, func(calls []message.ToolCall) {
+		for _, c := range calls {
+			m.Call(context.Background(), c)
+		}
+	})
+
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusSpeaking))
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusStopped))
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusSpeaking))
+	time.Sleep(60 * time.Millisecond)
+
+	for _, c := range mc.sent() {
+		if c == "stop" {
+			t.Errorf("a new phrase should cancel the rest, got %v", mc.sent())
+		}
+	}
 }
