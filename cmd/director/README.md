@@ -84,6 +84,24 @@ gemmai respond qwentin
 gemmai respond to qwentin keep it short
 ```
 
+## Dancing
+
+The heads can dance to a song that Dialogue plays from its `--music` directory. Load a song with its tempo in beats per minute, and optionally the seconds until the first beat:
+
+```
+dance song.wav 120
+dance song.mp3 98 0.4
+```
+
+Then start and stop it separately:
+
+```
+dance start
+dance stop
+```
+
+Each head swings left and right on every beat. For a fast song, give half the tempo. These are published to the `music` topic.
+
 ## Hotmic input
 
 When `--hotmic-model` is set, press the hotmic key (default **F5**) once to start recording and again to stop. The audio is transcribed locally using whisper.cpp and submitted automatically. The spoken format is the same as typed input: `"<actor>: <question>"`.

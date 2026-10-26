@@ -53,6 +53,8 @@ Special moves run at most once per show, with at least `--interjection-gap` betw
 
 The current mode is sent again every 2 seconds, because the firmware stops after 5 seconds without a command. When nothing is spoken for a second the head gets `stop` and rests. If a phrase then starts, the head picks up `talk` or `listen` again.
 
+When Dialogue publishes a beat on `dance`, the head swings with `dance 60` and `dance 120` on alternate beats. Movement calls from the model are skipped until the song stops, or until no beat arrives for 3 seconds, and then the head rests.
+
 Angle convention: `0` = full right, `90` = center, `180` = full left.
 
 ### Tool calls with LFM models
@@ -105,6 +107,7 @@ All payloads use the JSON types from `pkg/commands`.
 | `direction/<name>` | subscribe | Direct question from the Director — triggers a response |
 | `speak/#` | subscribe | Hear what other Actors say — added as context only, never triggers a response |
 | `speaking/<name>` | subscribe | Notifications from Dialogue when this Actor's voice starts or stops playing |
+| `dance` | subscribe | Beats from Dialogue while a song plays, so the head dances |
 | `speak/<name>` | publish | Publish the Actor's response |
 
 Actors do **not** subscribe to `say/#`. Messages published there are spoken by

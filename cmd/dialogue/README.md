@@ -22,6 +22,7 @@ dialogue serve --server tcp://localhost:1883 \
 | `--voicevox-data` | | `./voicevox_core` | VOICEVOX runtime directory |
 | `--voicevox-speed` | | `1.0` | VOICEVOX speaking speed (`1.0` is normal, lower is slower) |
 | `--gpu` | | `false` | Enable GPU acceleration for TTS |
+| `--music` | | `./music` | Directory with the `.wav` or `.mp3` songs that Director can play |
 
 ### `say`
 
@@ -74,6 +75,30 @@ When playback finishes it publishes:
 ```
 
 All payload types are defined in `pkg/commands`.
+
+## Music
+
+Director publishes to `music` to load a song from the `--music` directory with its tempo, and later to play or stop it:
+
+```json
+{"command": "load", "file": "song.wav", "bpm": 120, "offset": 0.4}
+{"command": "play"}
+{"command": "stop"}
+```
+
+While the song plays, Dialogue publishes to `dance` on every beat. The first beat is `offset` seconds after the song starts, and the next ones are `60 / bpm` seconds apart:
+
+```json
+{"status": "dancing", "beat": 1}
+```
+
+When the song ends or is stopped it publishes:
+
+```json
+{"status": "stopped"}
+```
+
+Voices can still speak while the music plays. Songs are converted to the sample rate of the audio device, which opens with the first sound played.
 
 ## Voice models
 

@@ -29,6 +29,8 @@ subgraph mqtt broker
     speak
     say
     speaking
+    music
+    dance
 end
 subgraph actors
     actor-1
@@ -50,6 +52,10 @@ speak-- subscribe -->dialogue
 say-- subscribe -->dialogue
 dialogue-- publish -->speaking
 speaking-- subscribe -->actors
+director -- publish --> music
+music-- subscribe -->dialogue
+dialogue-- publish -->dance
+dance-- subscribe -->actors
 ```
 
 ### Actor
@@ -66,6 +72,7 @@ subgraph mqtt broker
     direction
     speak
     speaking
+    dance
 end
 subgraph Actor
     subgraph actor
@@ -85,6 +92,7 @@ subgraph Actor
     run-- tool calls -->cues
     speaking-- subscribe -->cues
     cues-->movement
+    dance-- subscribe -->movement
 end
 subgraph The Head
     movement<-- UART -->actions
@@ -143,7 +151,7 @@ director -- publish --> say
 
 ![dialogue application](./images/dialogue.png)
 
-Dialogue runs on a separate computer that is connected to the same local network as the MQTT broker. It uses the [sayanything](https://github.com/talkingheads2053/sayanything) package with the [Piper](https://github.com/rhasspy/piper) Text To Speech engine for English, or [VOICEVOX](https://voicevox.hiroshiba.jp/) for Japanese, to create audio output for everything said by Actors.
+Dialogue runs on a separate computer that is connected to the same local network as the MQTT broker. It uses the [sayanything](https://github.com/talkingheads2053/sayanything) package with the [Piper](https://github.com/rhasspy/piper) Text To Speech engine for English, or [VOICEVOX](https://voicevox.hiroshiba.jp/) for Japanese, to create audio output for everything said by Actors. It also plays songs chosen by Director and publishes a beat on every beat, so the heads dance in time with the music.
 
 ```mermaid
 flowchart LR
@@ -151,18 +159,23 @@ subgraph mqtt broker
     speak
     say
     speaking
+    music
+    dance
 end
 subgraph dialogue
     speak-- subscribe -->sayanything
     say-- subscribe -->sayanything
+    music-- subscribe -->songs[music player]
     subgraph sayanything
         piper-->tts[Text To Speech model]
         voicevox-->tts
     end
     subgraph portaudio
         tts-- WAV -->speaker
+        songs-- WAV or MP3 -->speaker
     end
     sayanything-- publish -->speaking
+    songs-- publish beats -->dance
 end
 ```
 
@@ -179,6 +192,8 @@ subgraph mqtt broker
     speak
     say
     speaking
+    music
+    dance
 end
 subgraph Actor
     subgraph actor
@@ -199,18 +214,22 @@ subgraph Actor
     run-- tool calls -->cues
     speaking-- subscribe -->cues
     cues-->movement
+    dance-- subscribe -->movement
 end
 subgraph dialogue
     speak-- subscribe -->sayanything
     say-- subscribe -->sayanything
+    music-- subscribe -->songs[music player]
     subgraph sayanything
         piper-->tts[Text To Speech model]
         voicevox-->tts
     end
     subgraph portaudio
         tts-- WAV -->speaker
+        songs-- WAV or MP3 -->speaker
     end
     sayanything-- publish -->speaking
+    songs-- publish beats -->dance
 end
 subgraph director
     hotmic
@@ -223,6 +242,7 @@ subgraph hotmic
 end
 director -- publish --> direction
 director -- publish --> say
+director -- publish --> music
 ```
 
 ## Models
