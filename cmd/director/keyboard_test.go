@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/talkingheads2053/talkingheads/pkg/commands"
+)
 
 func TestStripSayPrefix(t *testing.T) {
 	cases := []struct {
@@ -157,6 +161,46 @@ func TestParseTypedInput_RespondKind(t *testing.T) {
 			}
 			if q.RespondTo != tc.wantRespondTo {
 				t.Errorf("RespondTo: got %q, want %q", q.RespondTo, tc.wantRespondTo)
+			}
+		})
+	}
+}
+
+func TestParseTypedInput_Dance(t *testing.T) {
+	actors := []string{"gemmai", "phineas", "qwentin"}
+
+	cases := []struct {
+		in   string
+		want commands.Music
+	}{
+		{"dance song.wav 120", commands.Music{Command: commands.MusicLoad, File: "song.wav", BPM: 120}},
+		{"dance song.mp3 98.5 0.4", commands.Music{Command: commands.MusicLoad, File: "song.mp3", BPM: 98.5, Offset: 0.4}},
+		{"dance start", commands.Music{Command: commands.MusicPlay}},
+		{"Dance Stop", commands.Music{Command: commands.MusicStop}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			q, err := parseTypedInput(tc.in, actors)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if q.Kind != kindDance {
+				t.Errorf("kind: got %v, want kindDance", q.Kind)
+			}
+			if q.Music != tc.want {
+				t.Errorf("music: got %+v, want %+v", q.Music, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseTypedInput_DanceErrors(t *testing.T) {
+	actors := []string{"gemmai", "phineas", "qwentin"}
+
+	for _, in := range []string{"dance", "dance song.wav", "dance song.wav fast", "dance song.wav 0", "dance song.wav 120 soon", "dance a b c d"} {
+		t.Run(in, func(t *testing.T) {
+			if _, err := parseTypedInput(in, actors); err == nil {
+				t.Errorf("expected an error for %q", in)
 			}
 		})
 	}

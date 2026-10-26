@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/talkingheads2053/talkingheads/pkg/commands"
 )
 
 // parseTypedInput parses a line of text typed by the user into a question.
@@ -19,6 +23,10 @@ func parseTypedInput(text string, actorList []string) (question, error) {
 	to := strings.TrimSuffix(first, ":")
 	to = strings.TrimSuffix(to, ",")
 	to = strings.ToLower(to)
+
+	if to == "dance" && !slices.Contains(actorList, to) {
+		return parseDance(strings.TrimPrefix(text, first))
+	}
 
 	if !slices.Contains(actorList, to) {
 		return question{}, fmt.Errorf("unknown actor %q — expected one of %v", to, actorList)
@@ -37,6 +45,36 @@ func parseTypedInput(text string, actorList []string) (question, error) {
 	}
 
 	return question{To: to, Content: content, Kind: kind, RespondTo: respondTo}, nil
+}
+
+var errDanceUsage = errors.New("usage: dance <file> <bpm> [offset], dance start, or dance stop")
+
+// parseDance parses the words after "dance" into a music question.
+func parseDance(s string) (question, error) {
+	fields := strings.Fields(s)
+	if len(fields) == 1 {
+		switch strings.ToLower(fields[0]) {
+		case "start":
+			return question{Kind: kindDance, Music: commands.Music{Command: commands.MusicPlay}}, nil
+		case "stop":
+			return question{Kind: kindDance, Music: commands.Music{Command: commands.MusicStop}}, nil
+		}
+	}
+	if len(fields) < 2 || len(fields) > 3 {
+		return question{}, errDanceUsage
+	}
+	bpm, err := strconv.ParseFloat(fields[1], 64)
+	if err != nil || bpm <= 0 {
+		return question{}, fmt.Errorf("invalid bpm %q", fields[1])
+	}
+	var offset float64
+	if len(fields) == 3 {
+		if offset, err = strconv.ParseFloat(fields[2], 64); err != nil {
+			return question{}, fmt.Errorf("invalid offset %q", fields[2])
+		}
+	}
+	music := commands.Music{Command: commands.MusicLoad, File: fields[0], BPM: bpm, Offset: offset}
+	return question{Kind: kindDance, Music: music}, nil
 }
 
 // stripRespondTarget splits an actor name, optionally after "to", off the

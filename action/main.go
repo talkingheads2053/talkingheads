@@ -47,7 +47,7 @@ func main() {
 func lights() {
 	for {
 		switch getMode() {
-		case StateSpeaking:
+		case StateSpeaking, StateDancing:
 			head.Alternate(personalityColor(), personalityColorAlternate())
 			matrix.StartVUMeter()
 		case StateWaiting:
@@ -122,6 +122,15 @@ func action() {
 			svo.SetAngle(90)
 			angle = 90
 			setMode(StateStopped)
+
+		case StateDancing:
+			// Move only when the beat changes the angle, and check often to stay on the beat.
+			if angle != targetAngle {
+				svo.SetAngle(targetAngle)
+				angle = targetAngle
+			}
+			time.Sleep(10 * time.Millisecond)
+			continue
 
 		case StateStopped:
 			svo.SetAngle(90)

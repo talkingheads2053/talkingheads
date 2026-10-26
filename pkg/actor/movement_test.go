@@ -222,3 +222,87 @@ func TestStageAngleFor_FallsBackToAudience(t *testing.T) {
 		}
 	}
 }
+
+// --- Dance ---
+
+func TestMovementDance_SwingsOnEachBeat(t *testing.T) {
+	m, mc := newTestMovement()
+	defer m.Close()
+
+	for beat := 1; beat <= 4; beat++ {
+		m.Dance(beat)
+	}
+
+	want := []string{"dance 60", "dance 120", "dance 60", "dance 120"}
+	if got := mc.sent(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("sent %v, want %v", got, want)
+	}
+}
+
+func TestMovementDance_SkipsModelMovement(t *testing.T) {
+	m, mc := newTestMovement()
+	defer m.Close()
+
+	m.Dance(1)
+	resp := move(m, map[string]string{"command": "headshake"})
+	m.RestSoon()
+	m.Rest()
+
+	if !strings.Contains(resp, "skipped") {
+		t.Errorf("expected movement to be skipped while dancing, got %s", resp)
+	}
+	if got := mc.sent(); len(got) != 1 {
+		t.Errorf("sent %v, want only the dance", got)
+	}
+	m.StopDance()
+	if resp := move(m, map[string]string{"command": "headshake"}); strings.Contains(resp, "skipped") {
+		t.Errorf("expected the interjection to still be unused after the dance, got %s", resp)
+	}
+}
+
+func TestMovementDance_KeepaliveSilent(t *testing.T) {
+	m, mc := newTestMovement()
+	m.keepEvery = 10 * time.Millisecond
+	go m.Keepalive()
+	defer m.Close()
+
+	move(m, map[string]string{"command": "talk"})
+	m.Dance(1)
+	n := len(mc.sent())
+	time.Sleep(40 * time.Millisecond)
+
+	if got := mc.sent(); len(got) != n {
+		t.Errorf("expected no keepalive while dancing, got %v", got)
+	}
+}
+
+func TestMovementStopDance_Rests(t *testing.T) {
+	m, mc := newTestMovement()
+	defer m.Close()
+
+	move(m, map[string]string{"command": "talk"})
+	m.Dance(1)
+	m.StopDance()
+	m.StopDance()
+
+	got := mc.sent()
+	if got[len(got)-1] != "stop" || got[len(got)-2] != "dance 60" {
+		t.Errorf("expected one stop after the dance, got %v", got)
+	}
+	if !m.Wake() {
+		t.Error("expected the head to be resting after the dance")
+	}
+}
+
+func TestMovementDance_EndsWhenBeatsStop(t *testing.T) {
+	m, mc := newTestMovement()
+	m.danceFor = 10 * time.Millisecond
+	defer m.Close()
+
+	m.Dance(1)
+	time.Sleep(40 * time.Millisecond)
+
+	if got := mc.sent(); got[len(got)-1] != "stop" {
+		t.Errorf("expected the dance to time out, got %v", got)
+	}
+}

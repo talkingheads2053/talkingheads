@@ -144,6 +144,11 @@ const (
 	keepaliveInterval = 2 * time.Second
 	// restDelay is how long a head waits with nothing to do before it rests.
 	restDelay = time.Second
+	// danceTimeout ends a dance when the beats stop arriving.
+	danceTimeout = 3 * time.Second
+	// danceLeft and danceRight are the angles a dancing head swings between.
+	danceLeft  = 120
+	danceRight = 60
 )
 
 // MovementOptions configures a Movement.
@@ -161,6 +166,7 @@ type Movement struct {
 	gap       time.Duration
 	restAfter time.Duration
 	keepEvery time.Duration
+	danceFor  time.Duration
 	now       func() time.Time
 
 	mu          sync.Mutex
@@ -168,6 +174,8 @@ type Movement struct {
 	lastSpecial time.Time
 	mode        string
 	rest        *time.Timer
+	dancing     bool
+	danceEnd    *time.Timer
 	stop        chan struct{}
 	stopOnce    sync.Once
 }
@@ -187,6 +195,7 @@ func NewMovement(commander Commander, opts MovementOptions) *Movement {
 		gap:       opts.InterjectionGap,
 		restAfter: restDelay,
 		keepEvery: keepaliveInterval,
+		danceFor:  danceTimeout,
 		now:       time.Now,
 		used:      make(map[string]bool),
 		stop:      make(chan struct{}),
@@ -248,6 +257,9 @@ func (m *Movement) Call(ctx context.Context, toolCall message.ToolCall) (resp st
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.dancing {
+		return toolSuccessResponse("command", command, "skipped", true)
+	}
 	m.cancelRest()
 
 	if interjections[command] && !m.allowSpecial(command) {
@@ -321,7 +333,7 @@ func (m *Movement) Keepalive() {
 			return
 		case <-t.C:
 			m.mu.Lock()
-			if m.mode != "" {
+			if m.mode != "" && !m.dancing {
 				_ = m.commander.Send(m.mode)
 			}
 			m.mu.Unlock()
@@ -333,6 +345,9 @@ func (m *Movement) Keepalive() {
 func (m *Movement) RestSoon() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.dancing {
+		return
+	}
 	m.cancelRest()
 	m.rest = time.AfterFunc(m.restAfter, m.Rest)
 }
@@ -342,13 +357,50 @@ func (m *Movement) Wake() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cancelRest()
-	return m.mode == ""
+	return m.mode == "" && !m.dancing
 }
 
 // Rest stops the head now.
 func (m *Movement) Rest() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.dancing {
+		return
+	}
+	m.mode = ""
+	_ = m.commander.Send("stop")
+}
+
+// Dance swings the head left on even beats and right on odd beats. Other
+// movement waits until StopDance or until the beats stop arriving.
+func (m *Movement) Dance(beat int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cancelRest()
+	m.dancing = true
+	angle := danceLeft
+	if beat%2 != 0 {
+		angle = danceRight
+	}
+	_ = m.commander.Send(fmt.Sprintf("dance %d", angle))
+	if m.danceEnd != nil {
+		m.danceEnd.Stop()
+	}
+	m.danceEnd = time.AfterFunc(m.danceFor, m.StopDance)
+}
+
+// StopDance ends a dance and rests the head.
+func (m *Movement) StopDance() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.dancing {
+		return
+	}
+	m.dancing = false
+	if m.danceEnd != nil {
+		m.danceEnd.Stop()
+		m.danceEnd = nil
+	}
 	m.mode = ""
 	_ = m.commander.Send("stop")
 }
@@ -366,6 +418,9 @@ func (m *Movement) Close() {
 		close(m.stop)
 		m.mu.Lock()
 		m.cancelRest()
+		if m.danceEnd != nil {
+			m.danceEnd.Stop()
+		}
 		m.mu.Unlock()
 	})
 }

@@ -44,3 +44,31 @@ type Speaking struct {
 	Who    string `json:"who"`
 	Status string `json:"status"`
 }
+
+const (
+	MusicLoad = "load"
+	MusicPlay = "play"
+	MusicStop = "stop"
+)
+
+// Music is the payload for the music MQTT topic.
+// It tells Dialogue to load a song from its music directory, play it, or stop it.
+// BPM is the tempo of the song and Offset is the seconds until the first beat.
+type Music struct {
+	Command string  `json:"command"`
+	File    string  `json:"file,omitempty"`
+	BPM     float64 `json:"bpm,omitempty"`
+	Offset  float64 `json:"offset,omitempty"`
+}
+
+const (
+	StatusDancing = "dancing"
+)
+
+// Dance is the payload for the dance MQTT topic.
+// Dialogue publishes StatusDancing with the beat count on every beat of the
+// song, and StatusStopped when the song ends or is stopped.
+type Dance struct {
+	Status string `json:"status"`
+	Beat   int    `json:"beat,omitempty"`
+}

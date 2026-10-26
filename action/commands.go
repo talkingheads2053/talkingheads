@@ -37,6 +37,7 @@ const (
 	CommandHeadShake  = "headshake"
 	CommandStop       = "stop"
 	CommandTheme      = "theme"
+	CommandDance      = "dance"
 
 	// State constants for controlling the behavior of the main loop.
 	StateLooking      = "looking"
@@ -45,6 +46,7 @@ const (
 	StateWaiting      = "waiting"
 	StateSpeaking     = "speaking"
 	StateHeadShaking  = "headshaking"
+	StateDancing      = "dancing"
 	StateStopped      = "stopped"
 )
 
@@ -56,7 +58,7 @@ func processCommand(cmd string) error {
 	command := parts[0]
 
 	switch command {
-	case CommandLook, CommandSlowLook, CommandDoubleTake:
+	case CommandLook, CommandSlowLook, CommandDoubleTake, CommandDance:
 		if len(parts) != 2 {
 			return errAngleRequired
 		}
@@ -149,6 +151,8 @@ func stateForCommand(command string) string {
 		return StateSpeaking
 	case CommandHeadShake:
 		return StateHeadShaking
+	case CommandDance:
+		return StateDancing
 	case CommandStop:
 		return StateStopped
 	default:

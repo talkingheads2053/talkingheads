@@ -21,6 +21,9 @@ const (
 	// kindRespond publishes commands.Direction with Respond=true to
 	// direction/<actor>, instructing the Actor to respond to the last speaker.
 	kindRespond
+	// kindDance publishes commands.Music to music, which tells Dialogue to
+	// load, play or stop a song for the Actors to dance to.
+	kindDance
 )
 
 type question struct {
@@ -28,6 +31,7 @@ type question struct {
 	To        string
 	Kind      questionKind
 	RespondTo string
+	Music     commands.Music
 }
 
 type conversation struct {
@@ -67,6 +71,9 @@ func (c *conversation) processQuestions() error {
 		case kindSay:
 			topic = "say/" + question.To
 			payload, err = json.Marshal(commands.Say{Who: question.To, What: question.Content})
+		case kindDance:
+			topic = "music"
+			payload, err = json.Marshal(question.Music)
 		case kindRespond:
 			topic = "direction/" + question.To
 			payload, err = json.Marshal(commands.Direction{Who: question.To, What: question.Content, Respond: true, RespondTo: question.RespondTo})
