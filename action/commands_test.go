@@ -184,3 +184,23 @@ func TestProcessCommand_ThemeInvalidColor(t *testing.T) {
 		t.Errorf("err = %v, want errInvalidColor", err)
 	}
 }
+
+func TestProcessCommand_DoubleTake(t *testing.T) {
+	resetState()
+	if err := processCommand("doubletake 30"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if getMode() != StateDoubleTaking {
+		t.Errorf("mode = %q, want %q", getMode(), StateDoubleTaking)
+	}
+	if targetAngle != 30 {
+		t.Errorf("targetAngle = %d, want 30", targetAngle)
+	}
+}
+
+func TestProcessCommand_DoubleTakeMissingAngle(t *testing.T) {
+	resetState()
+	if err := processCommand("doubletake"); err != errAngleRequired {
+		t.Errorf("err = %v, want errAngleRequired", err)
+	}
+}

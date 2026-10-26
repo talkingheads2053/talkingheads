@@ -34,6 +34,14 @@ Turns the head slowly to look at a specific angle. Probably used as a comedic ef
 slowlook 135
 ```
 
+### `doubletake [angle]`
+
+Looks at a specific angle, glances back, then snaps to the angle again. Used as a comedic effect.
+
+```
+doubletake 135
+```
+
 ### `speak`
 
 Causes the head to move a very small amount right or left one time per second while speaking.
