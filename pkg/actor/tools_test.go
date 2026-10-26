@@ -71,8 +71,9 @@ func TestInjectToolsIntoSystemPrompt_LFM(t *testing.T) {
 
 	for _, want := range []string{
 		"You are Gemmai.\nList of tools: [{\"name\":\"tool_movement\"}]",
-		"<|tool_call_start|>[tool_movement(",
-		"<|tool_call_end|>",
+		"[tool_movement(command='talk', target='audience')]",
+		"[tool_movement(command='listen', target='phineas')]",
+		"at most once in a show",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)

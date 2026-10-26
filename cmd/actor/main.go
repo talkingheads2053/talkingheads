@@ -166,6 +166,16 @@ func main() {
 				Usage:   "comma-separated left-to-right stage order of all actors as seen from the audience (e.g. gemmai,phineas,qwentin); pass the same value to every actor",
 				Aliases: []string{"ap"},
 			},
+			&cli.DurationFlag{
+				Name:  "interjection-gap",
+				Usage: "shortest time between two special movements such as doubletake or headshake",
+				Value: actor.DefaultInterjectionGap,
+			},
+			&cli.BoolFlag{
+				Name:  "react",
+				Usage: "move the head in reaction to lines heard from other actors (LFM models only)",
+				Value: true,
+			},
 			&cli.IntFlag{
 				Name:  "thinking-interval",
 				Usage: "seconds between repeated thinking phrases while waiting for the model's first token (0 = use default)",
@@ -304,6 +314,16 @@ func run(c *cli.Context) error {
 	cfg.ThinkingInterval = c.Int("thinking-interval")
 	cfg.MaxSentences = c.Int("max-sentences")
 	cfg.RepeatGuard = c.Int("repeat-guard")
+	cfg.InterjectionGap = c.Duration("interjection-gap")
+	cfg.React = c.Bool("react")
+	cfg.Stage = actor.Stage{Self: name}
+	if positions := c.String("actor-positions"); positions != "" {
+		parts := strings.Split(positions, ",")
+		for i, p := range parts {
+			parts[i] = strings.TrimSpace(p)
+		}
+		cfg.Stage.Positions = parts
+	}
 	cfg.Verbose = verbose
 	cfg.Lang = lang
 	cfg.ThinkingPhrases = actor.ThinkingPhrasesFor(lang)
@@ -322,7 +342,7 @@ func run(c *cli.Context) error {
 
 	if server != "" {
 		var err error
-		ml, err = actor.NewMQTTListener(name, server, commander, verbose)
+		ml, err = actor.NewMQTTListener(name, server, verbose)
 		if err != nil {
 			return cli.Exit(fmt.Sprintf("failed to connect to MQTT broker: %v", err), 1)
 		}
@@ -335,13 +355,6 @@ func run(c *cli.Context) error {
 		ml.SetEventsCh(eventsCh)
 		ml.SetLang(lang)
 		ml.SetRepeatGuard(c.Int("repeat-guard"))
-		if positions := c.String("actor-positions"); positions != "" {
-			parts := strings.Split(positions, ",")
-			for i, p := range parts {
-				parts[i] = strings.TrimSpace(p)
-			}
-			ml.SetActorPositions(parts)
-		}
 		moreFunc = ml.MoreFunc()
 		baseOutput := ml.OutputFunc()
 		baseThinkingOutput := ml.ThinkingOutputFunc()
@@ -388,6 +401,9 @@ func run(c *cli.Context) error {
 		a.SetThinkingOutputFunc(thinkingOutputFunc)
 		a.SetSpeakingDoneFunc(ml.WaitSpeakingDoneFunc())
 		a.SetRejectFunc(ml.RepeatsHeard)
+		ml.SetMovement(a.Movement(), a.RunToolCalls)
+		a.SetCueFunc(ml.Cue)
+		a.SetInterruptFunc(ml.DirectionPending)
 	}
 
 	// Redirect log output: into the viewport when verbose, silenced otherwise.

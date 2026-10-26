@@ -41,8 +41,11 @@ type Actor struct {
 	thinkingOutputFunc   func(content string)
 	speakingDoneFunc     func()
 	rejectFunc           func(sentence string) bool
+	cueFunc              func(calls []message.ToolCall)
+	interruptFunc        func() bool
 	tools                map[string]Tool
 	toolsJSON            string
+	movement             *Movement
 }
 
 // NewActor creates a new instance of Actor.
@@ -135,8 +138,12 @@ func NewActor(modelPath string, cfg Config, commander Commander, moreFunc func(c
 	smpl := llama.NewSampler(mdl, llama.DefaultSamplers, sp)
 
 	toolsMap := make(map[string]Tool)
+	movement := NewMovement(commander, MovementOptions{Stage: cfg.Stage, InterjectionGap: cfg.InterjectionGap})
 	toolDocs := []message.ToolDefinition{
-		RegisterMovement(toolsMap, commander),
+		movement.Register(toolsMap),
+	}
+	if _, ok := commander.(*SerialCommander); ok {
+		go movement.Keepalive()
 	}
 
 	var latin []llama.Token
@@ -157,6 +164,7 @@ func NewActor(modelPath string, cfg Config, commander Commander, moreFunc func(c
 		outputFunc:           outputFunc,
 		tools:                toolsMap,
 		toolsJSON:            marshalToolDocs(toolDocs),
+		movement:             movement,
 	}, nil
 }
 
@@ -387,12 +395,118 @@ func (a *Actor) PreprocessFunc(ctx context.Context) func(*[]message.Message) {
 			if ctx.Err() == nil {
 				log.Printf("preprocess: %v", err)
 			}
+			return
+		}
+		if a.cfg.React && a.streamsCalls() {
+			a.react(ctx, conversation)
 		}
 	}
 }
 
+// reactMaxTokens caps a listening reaction, which is only movement tool calls.
+const reactMaxTokens = 32
+
+// react lets the model move the head in reaction to a line it just heard. It
+// stops at the first plain text and drops the reaction if a direction arrives.
+func (a *Actor) react(ctx context.Context, conversation *[]message.Message) {
+	if a.interrupted() {
+		return
+	}
+	llama.SamplerReset(a.sampler)
+	tokens, err := a.renderTokens(conversation, true)
+	if err != nil {
+		log.Printf("react: %v", err)
+		return
+	}
+	if err := a.syncCache(ctx, tokens); err != nil {
+		return
+	}
+
+	var buf strings.Builder
+	pieceBuf := make([]byte, 128)
+	for range reactMaxTokens {
+		if ctx.Err() != nil || a.interrupted() {
+			return
+		}
+		token := llama.SamplerSample(a.sampler, a.llamaCtx, -1)
+		if llama.VocabIsEOG(a.vocab, token) {
+			break
+		}
+		if n := llama.TokenToPiece(a.vocab, token, pieceBuf, 0, true); n > 0 {
+			buf.Write(pieceBuf[:n])
+		}
+		text := strings.TrimSpace(buf.String())
+		if !strings.HasPrefix(text, lfmCallStart) && !strings.HasPrefix(lfmCallStart, text) {
+			return
+		}
+		if _, err := llama.Decode(a.llamaCtx, llama.BatchGetOne([]llama.Token{token})); err != nil {
+			a.cachedTokens = nil
+			return
+		}
+		a.cachedTokens = append(a.cachedTokens, token)
+		if strings.Contains(text, lfmCallEnd) {
+			break
+		}
+	}
+
+	raw := strings.TrimSpace(buf.String())
+	calls := message.ParseToolCalls(raw)
+	if len(calls) == 0 {
+		return
+	}
+	a.RunToolCalls(calls)
+	*conversation = append(*conversation, message.Chat{Role: "assistant", Content: raw})
+}
+
+func (a *Actor) interrupted() bool {
+	return a.interruptFunc != nil && a.interruptFunc()
+}
+
+// LFM tool call tokens.
+const (
+	lfmCallStart = "<|tool_call_start|>"
+	lfmCallEnd   = "<|tool_call_end|>"
+)
+
+// streamsCalls reports whether tool calls are cut out of the reply as it
+// streams, so they run in time with the speech.
+func (a *Actor) streamsCalls() bool {
+	return a.cfg.ModelFormat == message.FormatLFM
+}
+
+// Movement returns the head movement tool.
+func (a *Actor) Movement() *Movement {
+	return a.movement
+}
+
+// SetCueFunc registers where calls for the next spoken phrase go. Without it
+// they run when the phrase is emitted.
+func (a *Actor) SetCueFunc(fn func(calls []message.ToolCall)) {
+	a.cueFunc = fn
+}
+
+// SetInterruptFunc registers a check that stops a listening reaction, such as
+// a direction waiting to be answered.
+func (a *Actor) SetInterruptFunc(fn func() bool) {
+	a.interruptFunc = fn
+}
+
+// RunToolCalls runs tool calls and drops their results.
+func (a *Actor) RunToolCalls(calls []message.ToolCall) {
+	a.callTools(context.Background(), calls)
+}
+
+func (a *Actor) cue(calls []message.ToolCall) {
+	if a.cueFunc != nil {
+		a.cueFunc(calls)
+		return
+	}
+	a.RunToolCalls(calls)
+}
+
 // Close releases model and context resources.
 func (a *Actor) Close() {
+	a.movement.Close()
 	llama.SamplerFree(a.sampler)
 	llama.Free(a.llamaCtx)
 	llama.ModelFree(a.llamaModel)
@@ -466,10 +580,16 @@ func (a *Actor) Run(ctx context.Context, systemPrompt string) error {
 			}
 		}
 
-		content, hadText, toolCalls, err := a.generateTurn(ctx, &conversation, stopPausing)
+		turn, err := a.generateTurn(ctx, &conversation, stopPausing)
 		stopPausing() // no-op if already triggered on the first token
 		if err != nil {
 			return err
+		}
+		content, hadText, toolCalls := turn.spoken, turn.hadText, turn.calls
+
+		if a.streamsCalls() {
+			consecutiveToolOnlyTurns, needMoreInput = a.recordStreamedTurn(&conversation, turn, consecutiveToolOnlyTurns)
+			continue
 		}
 
 		if len(toolCalls) > 0 {
@@ -480,6 +600,31 @@ func (a *Actor) Run(ctx context.Context, systemPrompt string) error {
 		a.appendAssistant(&conversation, content)
 		needMoreInput = true
 	}
+}
+
+// recordStreamedTurn adds a turn whose tool calls already ran while it
+// streamed. The raw reply is kept so the KV cache still matches it.
+func (a *Actor) recordStreamedTurn(conversation *[]message.Message, turn turnResult, consecutiveToolOnlyTurns int) (int, bool) {
+	const maxConsecutiveToolOnlyTurns = 2
+
+	if turn.raw != "" {
+		*conversation = append(*conversation, message.Chat{Role: "assistant", Content: turn.raw})
+	}
+	if turn.hadText || len(turn.calls) == 0 {
+		return 0, true
+	}
+	consecutiveToolOnlyTurns++
+	if consecutiveToolOnlyTurns >= maxConsecutiveToolOnlyTurns {
+		if a.cfg.Verbose {
+			log.Printf("breaking tool-call loop after %d consecutive tool-only turns", consecutiveToolOnlyTurns)
+		}
+		return 0, true
+	}
+	*conversation = append(*conversation, message.Chat{
+		Role:    "user",
+		Content: phrasesFor(a.cfg.Lang).noWordsSpeak,
+	})
+	return consecutiveToolOnlyTurns, false
 }
 
 // handleToolCalls processes a turn that produced tool calls, updating the
@@ -655,20 +800,24 @@ func (a *Actor) GetMore(conversation *[]message.Message) bool {
 // spoken text was flushed to outputFunc alongside tool calls in the same turn.
 // The conversation pointer may be updated to trim old messages if the prompt
 // exceeds the model's context window.
-func (a *Actor) generateTurn(ctx context.Context, conversation *[]message.Message, stopPausing func()) (string, bool, []message.ToolCall, error) {
+func (a *Actor) generateTurn(ctx context.Context, conversation *[]message.Message, stopPausing func()) (turnResult, error) {
 	llama.SamplerReset(a.sampler)
 
 	tokens, err := a.renderTokens(conversation, true)
 	if err != nil {
-		return "", false, nil, err
+		return turnResult{}, err
 	}
 	if err := a.syncCache(ctx, tokens); err != nil {
-		return "", false, nil, err
+		return turnResult{}, err
 	}
 
 	var buf strings.Builder
 	pieceBuf := make([]byte, 128)
 	stream := &sentenceStream{emit: a.outputFunc, reject: a.rejectFunc, guard: a.cfg.RepeatGuard, max: a.cfg.MaxSentences, latin: a.latinWords}
+	if a.streamsCalls() {
+		stream.calls = true
+		stream.cue = a.cue
+	}
 
 	// gen holds the tokens generated this turn and ends the length of buf
 	// after each one, so a rejected sentence can be rewound to a token.
@@ -686,7 +835,7 @@ generateLoop:
 	for i := 0; i < a.cfg.MaxTokens; i++ {
 		select {
 		case <-ctx.Done():
-			return "", false, nil, ctx.Err()
+			return turnResult{}, ctx.Err()
 		default:
 		}
 
@@ -784,11 +933,22 @@ generateLoop:
 	}
 
 	spoken := stream.finish(buf.String())
+	if len(stream.pending) > 0 {
+		a.RunToolCalls(stream.pending)
+	}
 	hadText := spoken != "" && a.outputFunc != nil
 	if toolCalls := message.ParseToolCalls(text); len(toolCalls) > 0 {
-		return spoken, hadText, toolCalls, nil
+		return turnResult{spoken: spoken, hadText: hadText, calls: toolCalls, raw: text}, nil
 	}
-	return spoken, false, nil, nil
+	return turnResult{spoken: spoken, raw: text}, nil
+}
+
+// turnResult is what one generated turn produced.
+type turnResult struct {
+	spoken  string
+	hadText bool
+	calls   []message.ToolCall
+	raw     string
 }
 
 // stripThinkTags removes <think> and </think>. Qwen3 with no_think still emits
@@ -803,6 +963,9 @@ func stripThinkTags(s string) string {
 // streaming once markup shows up and leaves the rest to finish.
 type sentenceStream struct {
 	emit     func(string)
+	calls    bool                     // cut LFM tool call blocks out of the stream
+	cue      func([]message.ToolCall) // takes the calls for the next sentence
+	pending  []message.ToolCall
 	reject   func(string) bool
 	guard    int
 	max      int
@@ -819,6 +982,27 @@ type sentenceStream struct {
 func (s *sentenceStream) feed(raw string) {
 	for !s.stopped && !s.full() {
 		pending := raw[s.pos:]
+		if s.calls {
+			if i := strings.Index(pending, lfmCallStart); i > 0 {
+				// The text before a call block is finished.
+				if s.refuses(pending[:i]) {
+					s.rejected = true
+					return
+				}
+				s.say(pending[:i])
+				s.pos += i
+				continue
+			} else if i == 0 {
+				end := strings.Index(pending, lfmCallEnd)
+				if end < 0 {
+					return
+				}
+				end += len(lfmCallEnd)
+				s.pending = append(s.pending, message.ParseToolCalls(pending[:end])...)
+				s.pos += end
+				continue
+			}
+		}
 		if strings.ContainsAny(pending, "<{[(*`（") || strings.Contains(pending, "call:") {
 			s.stopped = true
 			return
@@ -863,11 +1047,36 @@ func (s *sentenceStream) refuses(segment string) bool {
 
 // finish speaks what is left in raw and returns everything spoken this turn.
 func (s *sentenceStream) finish(raw string) string {
-	if s.pos < len(raw) && !s.rejected && !s.refuses(raw[s.pos:]) {
+	if s.calls {
+		s.finishCalls(raw[min(s.pos, len(raw)):])
+	} else if s.pos < len(raw) && !s.rejected && !s.refuses(raw[s.pos:]) {
 		s.say(stripThinkTags(raw[s.pos:]))
 	}
 	s.pos = len(raw)
 	return strings.Join(s.spoken, " ")
+}
+
+// finishCalls speaks the text left in rest and keeps its tool calls in order.
+func (s *sentenceStream) finishCalls(rest string) {
+	for rest != "" {
+		text, block := rest, ""
+		if i := strings.Index(rest, lfmCallStart); i >= 0 {
+			text, block = rest[:i], rest[i:]
+			if end := strings.Index(block, lfmCallEnd); end >= 0 {
+				block, rest = block[:end+len(lfmCallEnd)], block[end+len(lfmCallEnd):]
+			} else {
+				rest = ""
+			}
+		} else {
+			rest = ""
+		}
+		if strings.TrimSpace(text) != "" && !s.rejected && !s.refuses(text) {
+			s.say(stripThinkTags(text))
+		}
+		if block != "" {
+			s.pending = append(s.pending, message.ParseToolCalls(block)...)
+		}
+	}
 }
 
 func (s *sentenceStream) say(segment string) {
@@ -879,6 +1088,10 @@ func (s *sentenceStream) say(segment string) {
 func (s *sentenceStream) add(sentence string) {
 	if s.full() {
 		return
+	}
+	if len(s.pending) > 0 && s.cue != nil {
+		s.cue(s.pending)
+		s.pending = nil
 	}
 	s.count++
 	s.spoken = append(s.spoken, sentence)
@@ -1006,7 +1219,7 @@ func (a *Actor) callTools(ctx context.Context, toolCalls []message.ToolCall) []m
 			// command="slowlook". Reroute those to tool_movement.
 			if movementTool, ok := a.tools["tool_movement"]; ok {
 				switch toolCall.Function.Name {
-				case "look", "slowlook", "headshake":
+				case CommandTalk, CommandListen, CommandLook, CommandSlowLook, CommandDoubleTake, CommandFaceCrowd, CommandHeadShake:
 					if toolCall.Function.Arguments == nil {
 						toolCall.Function.Arguments = map[string]string{}
 					}

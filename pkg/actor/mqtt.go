@@ -20,22 +20,20 @@ import (
 // The published response payload is {"who":"<name>","what":"<content>"},
 // which is compatible with the speak/# subscription in pkg/dialogue.
 type MQTTListener struct {
-	name           string
-	commander      Commander
-	client         mqtt.Client
-	incoming       chan string
-	heard          chan string
-	done           chan struct{}
-	closeOnce      sync.Once
-	verbose        bool
-	preprocessCB   func(*[]message.Message)
-	eventsCh       chan<- string
-	lastSpeaker    string
-	lastSpeakerMu  sync.RWMutex
-	turnSpeaker    string
-	lastLines      map[string][]string
-	actorPositions []string
-	lang           string
+	name          string
+	client        mqtt.Client
+	incoming      chan string
+	heard         chan string
+	done          chan struct{}
+	closeOnce     sync.Once
+	verbose       bool
+	preprocessCB  func(*[]message.Message)
+	eventsCh      chan<- string
+	lastSpeaker   string
+	lastSpeakerMu sync.RWMutex
+	turnSpeaker   string
+	lastLines     map[string][]string
+	lang          string
 
 	repeatLen int
 	heardMu   sync.Mutex
@@ -44,6 +42,18 @@ type MQTTListener struct {
 	speakMu   sync.Mutex
 	speakCond *sync.Cond
 	speakN    int // number of phrases issued but not yet StatusStopped
+
+	movement *Movement
+	runCalls func([]message.ToolCall)
+	cueMu    sync.Mutex
+	cue      []message.ToolCall // calls for the next phrase published
+	cued     []*cuedPhrase      // published phrases in order
+}
+
+// cuedPhrase holds the calls for one published phrase.
+type cuedPhrase struct {
+	calls   []message.ToolCall
+	dropped bool
 }
 
 // SetEventsCh registers a channel that receives human-readable event strings
@@ -52,12 +62,23 @@ func (l *MQTTListener) SetEventsCh(ch chan<- string) {
 	l.eventsCh = ch
 }
 
-// SetActorPositions records the left-to-right stage order of all actors as
-// seen from the audience (e.g. ["gemmai", "phineas", "qwentin"]). When set,
-// this Actor will issue a look command towards any other Actor that starts
-// speaking. Pass nil or an empty slice to disable the behaviour.
-func (l *MQTTListener) SetActorPositions(positions []string) {
-	l.actorPositions = positions
+// SetMovement sets the head movement and how to run movement tool calls.
+// Calls cued for a phrase run when the dialogue starts speaking it.
+func (l *MQTTListener) SetMovement(m *Movement, run func([]message.ToolCall)) {
+	l.movement = m
+	l.runCalls = run
+}
+
+// Cue holds calls until the next phrase is published.
+func (l *MQTTListener) Cue(calls []message.ToolCall) {
+	l.cueMu.Lock()
+	defer l.cueMu.Unlock()
+	l.cue = append(l.cue, calls...)
+}
+
+// DirectionPending reports whether a direction is waiting to be answered.
+func (l *MQTTListener) DirectionPending() bool {
+	return len(l.incoming) > 0
 }
 
 // SetLang sets the language code used for the text sent to the model.
@@ -137,53 +158,6 @@ func longestCommonRun(as, bs string) int {
 	return best
 }
 
-// lookAngleFor returns the servo angle (30–150) that this Actor should use to
-// face the named speaker, and reports whether positioning data is available.
-// Actors are assumed to face the audience; 0° is full right, 90° is center,
-// 180° is full left from each Actor's own perspective. The angle always falls
-// in [30, 60] when the speaker is to the right, or [120, 150] when to the
-// left, with the exact value scaling with relative distance between actors.
-func (l *MQTTListener) lookAngleFor(speaker string) (int, bool) {
-	if len(l.actorPositions) < 2 {
-		return 0, false
-	}
-	myIdx, speakerIdx := -1, -1
-	for i, name := range l.actorPositions {
-		if name == l.name {
-			myIdx = i
-		}
-		if name == speaker {
-			speakerIdx = i
-		}
-	}
-	if myIdx < 0 || speakerIdx < 0 || myIdx == speakerIdx {
-		return 0, false
-	}
-	n := len(l.actorPositions)
-	diff := speakerIdx - myIdx
-	absDiff := diff
-	if absDiff < 0 {
-		absDiff = -absDiff
-	}
-	// Scale a 30° spread across the band based on relative distance (closer = less extreme).
-	spread := absDiff * 30 / (n - 1)
-	var angle int
-	if diff > 0 {
-		// Higher index = to this Actor's left → angle in [120, 150].
-		angle = 120 + spread
-	} else {
-		// Lower index = to this Actor's right → angle in [30, 60].
-		angle = 60 - spread
-	}
-	if angle < 30 {
-		angle = 30
-	}
-	if angle > 150 {
-		angle = 150
-	}
-	return angle, true
-}
-
 // emit sends a message to eventsCh when set, without blocking.
 func (l *MQTTListener) emit(msg string) {
 	if l.eventsCh == nil {
@@ -197,11 +171,8 @@ func (l *MQTTListener) emit(msg string) {
 
 // NewMQTTListener connects to the broker, subscribes to "direction/<name>" for
 // direct prompts and "speak/#" to hear other actors, and returns a
-// ready-to-use MQTTListener. If commander is nil, a LogCommander is used.
-func NewMQTTListener(name, server string, commander Commander, verbose bool) (*MQTTListener, error) {
-	if commander == nil {
-		commander = &LogCommander{}
-	}
+// ready-to-use MQTTListener.
+func NewMQTTListener(name, server string, verbose bool) (*MQTTListener, error) {
 	options := mqtt.NewClientOptions()
 	options.AddBroker(server)
 	options.SetClientID("actor-" + name)
@@ -217,13 +188,12 @@ func NewMQTTListener(name, server string, commander Commander, verbose bool) (*M
 	}
 
 	l := &MQTTListener{
-		name:      name,
-		commander: commander,
-		client:    client,
-		incoming:  make(chan string, 32),
-		heard:     make(chan string, 64),
-		done:      make(chan struct{}),
-		verbose:   verbose,
+		name:     name,
+		client:   client,
+		incoming: make(chan string, 32),
+		heard:    make(chan string, 64),
+		done:     make(chan struct{}),
+		verbose:  verbose,
 	}
 	l.speakCond = sync.NewCond(&l.speakMu)
 
@@ -303,52 +273,52 @@ func (l *MQTTListener) handleSpeakingStatus(_ mqtt.Client, msg mqtt.Message) {
 		return
 	}
 	if s.Who == l.name {
-		// Own speaking status.
 		switch s.Status {
 		case commands.StatusSpeaking:
-			if err := l.commander.Send("speak"); err != nil {
-				if l.verbose {
-					log.Printf("failed to send speak command: %v\n", err)
-				}
+			if calls := l.nextCued(); len(calls) > 0 && l.runCalls != nil {
+				l.runCalls(calls)
 			}
 		case commands.StatusStopped:
-			if err := l.commander.Send("stop"); err != nil {
-				if l.verbose {
-					log.Printf("failed to send stop command: %v\n", err)
-				}
-			}
 			l.speakMu.Lock()
 			if l.speakN > 0 {
 				l.speakN--
 			}
+			idle := l.speakN == 0
 			l.speakCond.Broadcast()
 			l.speakMu.Unlock()
+			if idle && l.movement != nil {
+				l.movement.RestSoon()
+			}
 		}
 		return
 	}
-	// Another actor's speaking status — look towards them and enter waiting while they speak.
-	switch s.Status {
-	case commands.StatusSpeaking:
-		if angle, ok := l.lookAngleFor(s.Who); ok {
-			if err := l.commander.Send(fmt.Sprintf("look %d", angle)); err != nil {
-				if l.verbose {
-					log.Printf("failed to send look command: %v\n", err)
-				}
-			}
-		} else {
-			if err := l.commander.Send("wait"); err != nil {
-				if l.verbose {
-					log.Printf("failed to send wait command: %v\n", err)
-				}
-			}
-		}
-	case commands.StatusStopped:
-		if err := l.commander.Send("stop"); err != nil {
-			if l.verbose {
-				log.Printf("failed to send stop command: %v\n", err)
-			}
+	if s.Status == commands.StatusStopped && l.movement != nil {
+		l.movement.RestSoon()
+	}
+}
+
+// takeCue gives the cued calls to a phrase being published.
+func (l *MQTTListener) takeCue() *cuedPhrase {
+	l.cueMu.Lock()
+	defer l.cueMu.Unlock()
+	phrase := &cuedPhrase{calls: l.cue}
+	l.cue = nil
+	l.cued = append(l.cued, phrase)
+	return phrase
+}
+
+// nextCued returns the calls cued for the phrase the dialogue started speaking.
+func (l *MQTTListener) nextCued() []message.ToolCall {
+	l.cueMu.Lock()
+	defer l.cueMu.Unlock()
+	for len(l.cued) > 0 {
+		p := l.cued[0]
+		l.cued = l.cued[1:]
+		if !p.dropped {
+			return p.calls
 		}
 	}
+	return nil
 }
 
 func (l *MQTTListener) handleSpeak(_ mqtt.Client, msg mqtt.Message) {
@@ -378,13 +348,6 @@ func (l *MQTTListener) handleSpeak(_ mqtt.Client, msg mqtt.Message) {
 	}
 	l.lastSpeaker = s.Who
 	l.lastSpeakerMu.Unlock()
-	if angle, ok := l.lookAngleFor(s.Who); ok {
-		if err := l.commander.Send(fmt.Sprintf("look %d", angle)); err != nil {
-			if l.verbose {
-				log.Printf("failed to send look command: %v\n", err)
-			}
-		}
-	}
 	if l.verbose {
 		log.Printf("Heard %s say: %s\n", s.Who, s.What)
 	}
@@ -556,12 +519,20 @@ func (l *MQTTListener) makeOutputFunc(thinking bool) func(string) {
 		l.speakN++
 		l.speakMu.Unlock()
 
+		phrase := l.takeCue()
+
 		topic := "speak/" + l.name
 		go func() {
 			token := l.client.Publish(topic, 0, false, payload)
 			token.Wait()
 			if token.Error() != nil {
 				log.Printf("failed to publish response to %s: %v\n", topic, token.Error())
+				l.cueMu.Lock()
+				phrase.dropped = true
+				l.cueMu.Unlock()
+				if len(phrase.calls) > 0 && l.runCalls != nil {
+					l.runCalls(phrase.calls)
+				}
 				// Publish failed — the dialogue system will never send StatusStopped,
 				// so decrement here to avoid blocking waiters indefinitely.
 				l.speakMu.Lock()

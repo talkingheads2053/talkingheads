@@ -37,18 +37,29 @@ var commander actor.Commander // nil → LogCommander
 
 ### `Movement` tool
 
-Registered automatically by `NewActor`. Exposes the following commands to the model:
+Registered automatically by `NewActor`. The model makes every head movement with a `tool_movement` call. It picks a command and a target, which is an actor name from `--actor-positions` or `audience`. The firmware makes the small motions within a mode.
 
-| Command | Angle required | Description |
+| Command | Kind | Serial |
 |---|---|---|
-| `look` | yes (0–180) | Turn head to angle immediately |
-| `slowlook` | yes (0–180) | Turn head to angle slowly |
-| `headshake` | no | Shake head (indicates "no") |
-| `wait` | no | Idle movement while waiting to speak |
-| `speak` | no | Small movement while speaking |
-| `stop` | no | Stop and center (90°) |
+| `talk` | mode | `look <angle>` when a target is given, then `speak` |
+| `listen` | mode | `look <angle>`, then the firmware waits facing the speaker |
+| `look` | gaze | `look <angle>` |
+| `slowlook` | special | `slowlook <angle>` |
+| `doubletake` | special | `doubletake <angle>` |
+| `facecrowd` | special | `slowlook 90` |
+| `headshake` | special | `headshake` |
+
+Special moves run at most once per show, with at least `--interjection-gap` between any two. A refused one turns into a plain `look`, or nothing for `headshake`.
+
+The current mode is sent again every 2 seconds, because the firmware stops after 5 seconds without a command. When nothing is spoken for a few seconds the head gets `stop` and rests.
 
 Angle convention: `0` = full right, `90` = center, `180` = full left.
+
+### Tool calls with LFM models
+
+With `--model-format lfm` the reply streams with its tool calls cut out. Each call runs when the sentence after it starts playing, so the movement matches the voice. Calls with no sentence after them run at once.
+
+Each time the actor hears another actor, it runs a short reaction that may only write tool calls, such as `listen` facing the speaker. A direction arriving stops the reaction. `--react=false` turns this off.
 
 ## Serial protocol
 
@@ -112,7 +123,7 @@ Thinking phrases (filler sentences spoken while the model is generating, such as
 
 When Dialogue begins playing audio for this Actor it publishes a `speaking/<name>` message with `status: "speaking"`. When playback finishes it publishes `status: "stopped"`. The Actor uses these notifications to:
 
-- Drive the head-movement servo (`speak` / `stop` commands).
+- Run the movement tool calls cued for each phrase when it starts playing, and rest the head when nothing is playing.
 - **Gate thinking-phrase pacing** — the next thinking phrase is not emitted until the current one has finished playing. `MQTTListener` tracks in-flight phrase count via `speakN`; `WaitSpeakingDoneFunc()` returns a function that blocks until `speakN` reaches zero. When `SetSpeakingDoneFunc` is called with that function, `runThinkingPhrases` waits for each phrase to complete before emitting the next.
 
 ## Thinking phrase pacing
