@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/hybridgroup/yzma/pkg/message"
 )
 
 func TestLoadThinkingPhrases_BasicPhrases(t *testing.T) {
@@ -97,5 +99,11 @@ func TestMakeBannerJa(t *testing.T) {
 	}
 	if got := makeBanner("unknown", "", "ja"); got != makeBanner("unknown", "", "en") {
 		t.Error("unknown actor in ja mode should fall back to the en banner")
+	}
+}
+
+func TestParseModelFormat_LFM(t *testing.T) {
+	if got := parseModelFormat("lfm"); got != message.FormatLFM {
+		t.Errorf("parseModelFormat(%q) = %v, want %v", "lfm", got, message.FormatLFM)
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/hybridgroup/yzma/pkg/message"
 )
 
 // ---- toolSuccessResponse ----
@@ -59,5 +61,21 @@ func TestToolErrorResponse_Structure(t *testing.T) {
 	}
 	if !strings.Contains(payload.Data["error"].(string), "deadline exceeded") {
 		t.Errorf("error message not found in data: %v", payload.Data)
+	}
+}
+
+// ---- injectToolsIntoSystemPrompt ----
+
+func TestInjectToolsIntoSystemPrompt_LFM(t *testing.T) {
+	got := injectToolsIntoSystemPrompt("You are Gemmai.", `[{"name":"tool_movement"}]`, message.FormatLFM)
+
+	for _, want := range []string{
+		"You are Gemmai.\nList of tools: [{\"name\":\"tool_movement\"}]",
+		"<|tool_call_start|>[tool_movement(",
+		"<|tool_call_end|>",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
 	}
 }

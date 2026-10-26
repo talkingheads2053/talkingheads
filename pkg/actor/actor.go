@@ -730,7 +730,8 @@ generateLoop:
 			// dozens of consecutive "wait" commands) would otherwise consume
 			// the entire MaxTokens budget without producing any spoken text.
 			const maxToolCallBlocksPerGeneration = 8
-			toolCallCount := strings.Count(full, "</tool_call>") + strings.Count(full, "</function>")
+			toolCallCount := strings.Count(full, "</tool_call>") + strings.Count(full, "</function>") +
+				strings.Count(full, "<|tool_call_end|>")
 			// Also count Gemma/Gemma3 call: blocks, which use a closing brace
 			// instead of an XML tag.
 			if a.cfg.ModelFormat == message.FormatGemma || a.cfg.ModelFormat == message.FormatGemma3 {
