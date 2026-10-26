@@ -2,6 +2,7 @@ package actor
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -697,5 +698,112 @@ func TestSentenceStreamRejectStrayLatin(t *testing.T) {
 	s.feed(raw)
 	if !s.rejected || s.pos != len("TinyGoで支配する。") {
 		t.Fatalf("rejected = %v, pos = %d", s.rejected, s.pos)
+	}
+}
+
+// callStream records what a calls stream speaks and cues, in order.
+func callStream() (*sentenceStream, *[]string) {
+	var log []string
+	s := &sentenceStream{
+		calls: true,
+		emit:  func(v string) { log = append(log, "say "+v) },
+		cue: func(calls []message.ToolCall) {
+			for _, c := range calls {
+				log = append(log, "cue "+c.Function.Arguments["command"])
+			}
+		},
+	}
+	return s, &log
+}
+
+// feedPieces feeds raw one piece at a time, like generated tokens.
+func feedPieces(s *sentenceStream, pieces ...string) string {
+	raw := ""
+	for _, p := range pieces {
+		raw += p
+		s.feed(raw)
+	}
+	return raw
+}
+
+func lfmCall(args string) string {
+	return lfmCallStart + "[tool_movement(" + args + ")]" + lfmCallEnd
+}
+
+func TestSentenceStream_CallsCueBeforeTheirSentence(t *testing.T) {
+	s, log := callStream()
+	raw := feedPieces(s, lfmCall(`command="talk"`), "Hello there. ", lfmCall(`command="look", target="gemmai"`), "Look at that. ", "Bye")
+	s.finish(raw)
+
+	want := "cue talk|say Hello there.|cue look|say Look at that.|say Bye"
+	if got := strings.Join(*log, "|"); got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+func TestSentenceStream_CallAfterLastSentenceIsPending(t *testing.T) {
+	s, log := callStream()
+	raw := feedPieces(s, "No way. ", lfmCall(`command="headshake"`))
+	s.finish(raw)
+
+	if got := strings.Join(*log, "|"); got != "say No way." {
+		t.Errorf("got %s", got)
+	}
+	if len(s.pending) != 1 || s.pending[0].Function.Arguments["command"] != "headshake" {
+		t.Errorf("pending = %v, want one headshake", s.pending)
+	}
+}
+
+func TestSentenceStream_TextBeforeCallIsFinished(t *testing.T) {
+	s, log := callStream()
+	feedPieces(s, "Hello there", lfmCall(`command="look"`))
+
+	if got := strings.Join(*log, "|"); got != "say Hello there" {
+		t.Errorf("got %s", got)
+	}
+}
+
+func TestSentenceStream_PartialCallWaits(t *testing.T) {
+	s, log := callStream()
+	s.feed(lfmCallStart + `[tool_movement(command="ta`)
+	if len(*log) != 0 || s.pos != 0 || s.stopped {
+		t.Fatalf("expected the stream to wait, got %v pos=%d stopped=%v", *log, s.pos, s.stopped)
+	}
+	raw := lfmCall(`command="talk"`) + "Hi. "
+	s.feed(raw)
+	s.finish(raw)
+	if got := strings.Join(*log, "|"); got != "cue talk|say Hi." {
+		t.Errorf("got %s", got)
+	}
+}
+
+func TestSentenceStream_FinishKeepsUnstreamedCalls(t *testing.T) {
+	s, log := callStream()
+	s.finish(lfmCall(`command="talk"`) + "One. " + lfmCall(`command="facecrowd"`) + "Two.")
+
+	want := "cue talk|say One.|cue facecrowd|say Two."
+	if got := strings.Join(*log, "|"); got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+func TestRecordStreamedTurn(t *testing.T) {
+	a := &Actor{cfg: DefaultConfig()}
+	talk := []message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "talk"})}
+
+	var conv []message.Message
+	n, more := a.recordStreamedTurn(&conv, turnResult{hadText: true, calls: talk, raw: "raw reply"}, 0)
+	if n != 0 || !more || len(conv) != 1 || conv[0].GetContent()["content"] != "raw reply" {
+		t.Fatalf("spoken turn: n=%d more=%v conv=%v", n, more, conv)
+	}
+
+	conv = nil
+	n, more = a.recordStreamedTurn(&conv, turnResult{calls: talk, raw: "calls only"}, 0)
+	if n != 1 || more || len(conv) != 2 || conv[1].GetRole() != "user" {
+		t.Fatalf("tool only turn should nudge: n=%d more=%v conv=%v", n, more, conv)
+	}
+	n, more = a.recordStreamedTurn(&conv, turnResult{calls: talk, raw: "calls only"}, n)
+	if n != 0 || !more {
+		t.Errorf("second tool only turn should give up: n=%d more=%v", n, more)
 	}
 }

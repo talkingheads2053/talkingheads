@@ -1,6 +1,7 @@
 package actor
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -34,110 +35,130 @@ func (m *mockMessage) MessageID() uint16 { return 0 }
 func (m *mockMessage) Payload() []byte   { return m.payload }
 func (m *mockMessage) Ack()              {}
 
-func TestHandleSpeakingStatus_Speaking(t *testing.T) {
-	mc := &mockCommander{}
-	l := &MQTTListener{name: "testactor", commander: mc}
+// syncCommander records commands sent from any goroutine.
+type syncCommander struct {
+	mu   sync.Mutex
+	cmds []string
+}
 
-	payload, _ := json.Marshal(commands.Speaking{Who: "testactor", Status: commands.StatusSpeaking})
-	msg := &mockMessage{payload: payload, topic: "speaking/testactor"}
+func (c *syncCommander) Send(cmd string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cmds = append(c.cmds, cmd)
+	return nil
+}
 
-	l.handleSpeakingStatus(nil, msg)
+func (c *syncCommander) sent() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.cmds...)
+}
 
-	if len(mc.sentCmds) != 1 || mc.sentCmds[0] != "speak" {
-		t.Errorf("commander.Send: got %v, want [\"speak\"]", mc.sentCmds)
+func speakingMsg(who, status string) *mockMessage {
+	payload, _ := json.Marshal(commands.Speaking{Who: who, Status: status})
+	return &mockMessage{payload: payload, topic: "speaking/" + who}
+}
+
+func TestHandleSpeakingStatus_RunsCuedCallsInOrder(t *testing.T) {
+	l := newTestListener("gemmai")
+	var ran []string
+	l.SetMovement(nil, func(calls []message.ToolCall) {
+		for _, c := range calls {
+			ran = append(ran, c.Function.Arguments["command"])
+		}
+	})
+
+	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "talk"})})
+	l.takeCue()
+	l.takeCue() // a thinking phrase with no calls
+	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "look"})})
+	l.takeCue()
+
+	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusSpeaking))
+	if strings.Join(ran, ",") != "talk" {
+		t.Fatalf("after first phrase ran %v, want [talk]", ran)
+	}
+	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusSpeaking))
+	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusSpeaking))
+	if strings.Join(ran, ",") != "talk,look" {
+		t.Errorf("ran %v, want [talk look]", ran)
 	}
 }
 
-func TestHandleSpeakingStatus_Stopped(t *testing.T) {
-	mc := &mockCommander{}
-	l := &MQTTListener{name: "testactor", commander: mc}
-	l.speakCond = sync.NewCond(&l.speakMu)
+func TestHandleSpeakingStatus_SkipsDroppedPhrase(t *testing.T) {
+	l := newTestListener("gemmai")
+	var ran []string
+	l.SetMovement(nil, func(calls []message.ToolCall) {
+		ran = append(ran, calls[0].Function.Arguments["command"])
+	})
 
-	payload, _ := json.Marshal(commands.Speaking{Who: "testactor", Status: commands.StatusStopped})
-	msg := &mockMessage{payload: payload, topic: "speaking/testactor"}
+	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "talk"})})
+	l.takeCue().dropped = true
+	l.Cue([]message.ToolCall{makeToolCall("tool_movement", map[string]string{"command": "look"})})
+	l.takeCue()
 
-	l.handleSpeakingStatus(nil, msg)
+	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusSpeaking))
+	if strings.Join(ran, ",") != "look" {
+		t.Errorf("ran %v, want [look]", ran)
+	}
+}
 
-	if len(mc.sentCmds) != 1 || mc.sentCmds[0] != "stop" {
-		t.Errorf("commander.Send: got %v, want [\"stop\"]", mc.sentCmds)
+func TestHandleSpeakingStatus_NoHardcodedMovement(t *testing.T) {
+	mc := &syncCommander{}
+	m := NewMovement(mc, MovementOptions{})
+	l := newTestListener("gemmai")
+	l.SetMovement(m, nil)
+
+	l.handleSpeakingStatus(nil, speakingMsg("gemmai", commands.StatusSpeaking))
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusSpeaking))
+
+	if got := mc.sent(); len(got) != 0 {
+		t.Errorf("expected no commands, got %v", got)
+	}
+}
+
+func TestHandleSpeakingStatus_RestsWhenIdle(t *testing.T) {
+	mc := &syncCommander{}
+	m := NewMovement(mc, MovementOptions{})
+	m.restAfter = 10 * time.Millisecond
+	l := newTestListener("gemmai")
+	l.SetMovement(m, nil)
+
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusStopped))
+
+	time.Sleep(50 * time.Millisecond)
+	if got := mc.sent(); len(got) != 1 || got[0] != "stop" {
+		t.Errorf("got %v, want [stop]", got)
+	}
+}
+
+func TestHandleSpeakingStatus_MovementCancelsRest(t *testing.T) {
+	mc := &syncCommander{}
+	m := NewMovement(mc, MovementOptions{})
+	m.restAfter = 20 * time.Millisecond
+	l := newTestListener("gemmai")
+	l.SetMovement(m, nil)
+
+	l.handleSpeakingStatus(nil, speakingMsg("phineas", commands.StatusStopped))
+	m.Call(context.Background(), makeToolCall("tool_movement", map[string]string{"command": "listen", "target": "audience"}))
+
+	time.Sleep(60 * time.Millisecond)
+	for _, c := range mc.sent() {
+		if c == "stop" {
+			t.Errorf("rest should be cancelled by a movement, got %v", mc.sent())
+		}
 	}
 }
 
 func TestHandleSpeakingStatus_InvalidPayload(t *testing.T) {
-	mc := &mockCommander{}
-	l := &MQTTListener{name: "testactor", commander: mc}
-
-	msg := &mockMessage{payload: []byte("not valid json"), topic: "speaking/testactor"}
-
-	l.handleSpeakingStatus(nil, msg)
-
-	// No command expected for invalid JSON.
-	if len(mc.sentCmds) != 0 {
-		t.Errorf("expected no commands for invalid JSON, got %v", mc.sentCmds)
-	}
-}
-
-func TestHandleSpeakingStatus_UnknownStatus(t *testing.T) {
-	mc := &mockCommander{}
-	l := &MQTTListener{name: "testactor", commander: mc}
-
-	payload, _ := json.Marshal(commands.Speaking{Who: "testactor", Status: "unknown"})
-	msg := &mockMessage{payload: payload, topic: "speaking/testactor"}
-
-	l.handleSpeakingStatus(nil, msg)
-
-	// No command expected for an unrecognised status.
-	if len(mc.sentCmds) != 0 {
-		t.Errorf("expected no commands for unknown status, got %v", mc.sentCmds)
-	}
-}
-
-func TestHandleSpeakingStatus_OtherActorSpeaking(t *testing.T) {
-	mc := &mockCommander{}
-	l := &MQTTListener{name: "testactor", commander: mc}
-
-	payload, _ := json.Marshal(commands.Speaking{Who: "otheractor", Status: commands.StatusSpeaking})
-	msg := &mockMessage{payload: payload, topic: "speaking/otheractor"}
-
-	l.handleSpeakingStatus(nil, msg)
-
-	// No positions set — falls back to wait.
-	if len(mc.sentCmds) != 1 || mc.sentCmds[0] != "wait" {
-		t.Errorf("commander.Send: got %v, want [\"wait\"]", mc.sentCmds)
-	}
-}
-
-func TestHandleSpeakingStatus_OtherActorSpeaking_WithPositions(t *testing.T) {
-	mc := &mockCommander{}
 	l := newTestListener("gemmai")
-	l.commander = mc
-	l.SetActorPositions([]string{"gemmai", "phineas"})
+	called := false
+	l.SetMovement(nil, func([]message.ToolCall) { called = true })
 
-	payload, _ := json.Marshal(commands.Speaking{Who: "phineas", Status: commands.StatusSpeaking})
-	msg := &mockMessage{payload: payload, topic: "speaking/phineas"}
+	l.handleSpeakingStatus(nil, &mockMessage{payload: []byte("not valid json"), topic: "speaking/gemmai"})
 
-	l.handleSpeakingStatus(nil, msg)
-
-	// Positions set — must send a look command immediately.
-	if len(mc.sentCmds) == 0 {
-		t.Fatal("expected a look command, got none")
-	}
-	if !strings.HasPrefix(mc.sentCmds[0], "look ") {
-		t.Errorf("expected command starting with 'look ', got %q", mc.sentCmds[0])
-	}
-}
-
-func TestHandleSpeakingStatus_OtherActorStopped(t *testing.T) {
-	mc := &mockCommander{}
-	l := &MQTTListener{name: "testactor", commander: mc}
-
-	payload, _ := json.Marshal(commands.Speaking{Who: "otheractor", Status: commands.StatusStopped})
-	msg := &mockMessage{payload: payload, topic: "speaking/otheractor"}
-
-	l.handleSpeakingStatus(nil, msg)
-
-	if len(mc.sentCmds) != 1 || mc.sentCmds[0] != "stop" {
-		t.Errorf("commander.Send: got %v, want [\"stop\"]", mc.sentCmds)
+	if called {
+		t.Error("expected no calls for invalid JSON")
 	}
 }
 
@@ -145,11 +166,10 @@ func TestHandleSpeakingStatus_OtherActorStopped(t *testing.T) {
 // connection and buffered channels.
 func newTestListener(name string) *MQTTListener {
 	l := &MQTTListener{
-		name:      name,
-		commander: &mockCommander{},
-		incoming:  make(chan string, 32),
-		heard:     make(chan string, 64),
-		done:      make(chan struct{}),
+		name:     name,
+		incoming: make(chan string, 32),
+		heard:    make(chan string, 64),
+		done:     make(chan struct{}),
 	}
 	l.speakCond = sync.NewCond(&l.speakMu)
 	return l
@@ -651,122 +671,29 @@ func TestHandleDirection_NoRespond_IgnoresLastSpeaker(t *testing.T) {
 	}
 }
 
-// --- lookAngleFor ---
+// --- handleSpeak ---
 
-func TestLookAngleFor_TwoActors(t *testing.T) {
-	// gemmai is left (index 0), phineas is right (index 1).
+func TestHandleSpeak_SendsNoMovement(t *testing.T) {
+	mc := &syncCommander{}
 	l := newTestListener("gemmai")
-	l.SetActorPositions([]string{"gemmai", "phineas"})
-
-	angle, ok := l.lookAngleFor("phineas")
-	if !ok {
-		t.Fatal("expected ok=true")
-	}
-	// phineas has higher index → to gemmai's left → angle > 90
-	if angle <= 90 {
-		t.Errorf("expected angle > 90 for actor to the left, got %d", angle)
-	}
-}
-
-func TestLookAngleFor_TwoActors_OtherDirection(t *testing.T) {
-	l := newTestListener("phineas")
-	l.SetActorPositions([]string{"gemmai", "phineas"})
-
-	angle, ok := l.lookAngleFor("gemmai")
-	if !ok {
-		t.Fatal("expected ok=true")
-	}
-	// gemmai has lower index → to phineas's right → angle < 90
-	if angle >= 90 {
-		t.Errorf("expected angle < 90 for actor to the right, got %d", angle)
-	}
-}
-
-func TestLookAngleFor_ThreeActors_Center(t *testing.T) {
-	l := newTestListener("phineas")
-	l.SetActorPositions([]string{"gemmai", "phineas", "qwentin"})
-
-	leftAngle, ok := l.lookAngleFor("qwentin")
-	if !ok {
-		t.Fatal("expected ok=true for qwentin")
-	}
-	rightAngle, ok := l.lookAngleFor("gemmai")
-	if !ok {
-		t.Fatal("expected ok=true for gemmai")
-	}
-	// qwentin is to the left → angle > 90; gemmai is to the right → angle < 90
-	if leftAngle <= 90 {
-		t.Errorf("expected leftAngle > 90, got %d", leftAngle)
-	}
-	if rightAngle >= 90 {
-		t.Errorf("expected rightAngle < 90, got %d", rightAngle)
-	}
-	// Symmetric around 90
-	if leftAngle+rightAngle != 180 {
-		t.Errorf("expected symmetric angles summing to 180, got %d+%d=%d", leftAngle, rightAngle, leftAngle+rightAngle)
-	}
-}
-
-func TestLookAngleFor_EmptyPositions_ReturnsFalse(t *testing.T) {
-	l := newTestListener("gemmai")
-	_, ok := l.lookAngleFor("phineas")
-	if ok {
-		t.Error("expected ok=false with no positions set")
-	}
-}
-
-func TestLookAngleFor_SinglePosition_ReturnsFalse(t *testing.T) {
-	l := newTestListener("gemmai")
-	l.SetActorPositions([]string{"gemmai"})
-	_, ok := l.lookAngleFor("phineas")
-	if ok {
-		t.Error("expected ok=false with only one actor in positions")
-	}
-}
-
-func TestLookAngleFor_UnknownSpeaker_ReturnsFalse(t *testing.T) {
-	l := newTestListener("gemmai")
-	l.SetActorPositions([]string{"gemmai", "phineas"})
-	_, ok := l.lookAngleFor("unknown")
-	if ok {
-		t.Error("expected ok=false for speaker not in positions")
-	}
-}
-
-// --- handleSpeak with actor positions ---
-
-func TestHandleSpeak_SendsLook_WhenPositionsSet(t *testing.T) {
-	mc := &mockCommander{}
-	l := newTestListener("gemmai")
-	l.commander = mc
-	l.SetActorPositions([]string{"gemmai", "phineas"})
+	l.SetMovement(NewMovement(mc, MovementOptions{}), nil)
 
 	payload, _ := json.Marshal(commands.Speak{Who: "phineas", What: "hello"})
 	l.handleSpeak(nil, &mockMessage{payload: payload})
 
-	// Expect a look command to have been sent.
-	if len(mc.sentCmds) == 0 {
-		t.Fatal("expected a look command, got none")
-	}
-	cmd := mc.sentCmds[0]
-	if !strings.HasPrefix(cmd, "look ") {
-		t.Errorf("expected command starting with 'look ', got %q", cmd)
+	if got := mc.sent(); len(got) != 0 {
+		t.Errorf("expected no commands, got %v", got)
 	}
 }
 
-func TestHandleSpeak_NoLook_WhenPositionsNotSet(t *testing.T) {
-	mc := &mockCommander{}
+func TestDirectionPending(t *testing.T) {
 	l := newTestListener("gemmai")
-	l.commander = mc
-	// actorPositions not set
-
-	payload, _ := json.Marshal(commands.Speak{Who: "phineas", What: "hello"})
-	l.handleSpeak(nil, &mockMessage{payload: payload})
-
-	for _, cmd := range mc.sentCmds {
-		if strings.HasPrefix(cmd, "look") {
-			t.Errorf("unexpected look command when positions not set: %q", cmd)
-		}
+	if l.DirectionPending() {
+		t.Fatal("expected no direction pending")
+	}
+	l.incoming <- "hello"
+	if !l.DirectionPending() {
+		t.Error("expected a direction pending")
 	}
 }
 

@@ -108,19 +108,7 @@ Hello! I'm doing wonderfully today.
 A response with only <function=…></function> blocks and no plain text is ALWAYS wrong.`, toolsJSON)
 	}
 	if format == message.FormatLFM {
-		return systemPrompt + fmt.Sprintf(`
-List of tools: %s
-
-When you need to use a tool, write the call as a Python list between the tool call tokens:
-<|tool_call_start|>[tool_movement(command="look", angle=90)]<|tool_call_end|>
-
-IMPORTANT: Your spoken words MUST appear as plain text OUTSIDE the tool call tokens.
-Tool calls are physical action cues only. They do NOT replace spoken text.
-
-Example of a correct response:
-<|tool_call_start|>[tool_movement(command="look", angle=45)]<|tool_call_end|>Hello! I'm doing wonderfully today.
-
-A response with only tool calls and no plain text is ALWAYS wrong.`, toolsJSON)
+		return systemPrompt + "\n" + lfmMovementPrompt(toolsJSON)
 	}
 	return systemPrompt + fmt.Sprintf(`
 
@@ -142,4 +130,20 @@ func normalizeToolName(name string) string {
 	name = strings.ReplaceAll(name, "_", "")
 	name = strings.ReplaceAll(name, "-", "")
 	return name
+}
+
+// lfmMovementPrompt tells an LFM model how to move its head. Training uses the
+// same text, so change both together.
+func lfmMovementPrompt(toolsJSON string) string {
+	return fmt.Sprintf(`List of tools: %s
+
+Move your head with tool_movement calls between the tool call tokens.
+When you start to speak, call talk first:
+<|tool_call_start|>[tool_movement(command='talk', target='audience')]<|tool_call_end|>
+Before a sentence that mentions another actor, look at them:
+<|tool_call_start|>[tool_movement(command='look', target='qwentin')]<|tool_call_end|>
+When you hear another actor speak, answer only with a listen call that faces them:
+<|tool_call_start|>[tool_movement(command='listen', target='phineas')]<|tool_call_end|>
+slowlook, doubletake, facecrowd and headshake are rare special moves. Use each one at most once in a show.
+Your spoken words go outside the tool call tokens.`, toolsJSON)
 }

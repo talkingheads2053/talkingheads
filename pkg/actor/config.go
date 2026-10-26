@@ -1,6 +1,10 @@
 package actor
 
-import "github.com/hybridgroup/yzma/pkg/message"
+import (
+	"time"
+
+	"github.com/hybridgroup/yzma/pkg/message"
+)
 
 var defaultThinkingPhrases = []string{
 	"let me think about that for a moment...",
@@ -139,6 +143,12 @@ type Config struct {
 	RepeatGuard int
 	// Lang is the language code for the text the actor sends to the model.
 	Lang string
+	// Stage is this actor's name and the order of all actors, used to aim the head.
+	Stage Stage
+	// InterjectionGap is the shortest time between two special movements.
+	InterjectionGap time.Duration
+	// React runs a short movement reaction to each line heard from another actor.
+	React bool
 }
 
 // DefaultConfig returns a Config populated with sensible defaults.
@@ -164,5 +174,7 @@ func DefaultConfig() Config {
 		ThinkingInterval: DefaultThinkingInterval,
 		MaxSentences:     DefaultMaxSentences,
 		Lang:             "en",
+		InterjectionGap:  DefaultInterjectionGap,
+		React:            true,
 	}
 }
