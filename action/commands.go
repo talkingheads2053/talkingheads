@@ -29,21 +29,23 @@ var (
 
 const (
 	// Command constants for serial input.
-	CommandLook      = "look"
-	CommandSlowLook  = "slowlook"
-	CommandWait      = "wait"
-	CommandSpeak     = "speak"
-	CommandHeadShake = "headshake"
-	CommandStop      = "stop"
-	CommandTheme     = "theme"
+	CommandLook       = "look"
+	CommandSlowLook   = "slowlook"
+	CommandDoubleTake = "doubletake"
+	CommandWait       = "wait"
+	CommandSpeak      = "speak"
+	CommandHeadShake  = "headshake"
+	CommandStop       = "stop"
+	CommandTheme      = "theme"
 
 	// State constants for controlling the behavior of the main loop.
-	StateLooking     = "looking"
-	StateSlowLooking = "slowlooking"
-	StateWaiting     = "waiting"
-	StateSpeaking    = "speaking"
-	StateHeadShaking = "headshaking"
-	StateStopped     = "stopped"
+	StateLooking      = "looking"
+	StateSlowLooking  = "slowlooking"
+	StateDoubleTaking = "doubletaking"
+	StateWaiting      = "waiting"
+	StateSpeaking     = "speaking"
+	StateHeadShaking  = "headshaking"
+	StateStopped      = "stopped"
 )
 
 // processCommand parses and dispatches a received serial command.
@@ -54,7 +56,7 @@ func processCommand(cmd string) error {
 	command := parts[0]
 
 	switch command {
-	case CommandLook, CommandSlowLook:
+	case CommandLook, CommandSlowLook, CommandDoubleTake:
 		if len(parts) != 2 {
 			return errAngleRequired
 		}
@@ -139,6 +141,8 @@ func stateForCommand(command string) string {
 		return StateLooking
 	case CommandSlowLook:
 		return StateSlowLooking
+	case CommandDoubleTake:
+		return StateDoubleTaking
 	case CommandWait:
 		return StateWaiting
 	case CommandSpeak:

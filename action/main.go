@@ -82,6 +82,17 @@ func action() {
 				setMode(StateStopped)
 			}
 
+		case StateDoubleTaking:
+			// Look at the target, glance back, then snap to the target again.
+			prev := angle
+			svo.SetAngle(targetAngle)
+			time.Sleep(400 * time.Millisecond)
+			svo.SetAngle((targetAngle + prev) / 2)
+			time.Sleep(300 * time.Millisecond)
+			svo.SetAngle(targetAngle)
+			angle = targetAngle
+			setMode(StateWaiting)
+
 		case StateWaiting:
 			// Move a small amount once every 0.5–1 second.
 			waitCounter--
