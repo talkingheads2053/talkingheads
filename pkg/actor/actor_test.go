@@ -807,3 +807,28 @@ func TestRecordStreamedTurn(t *testing.T) {
 		t.Errorf("second tool only turn should give up: n=%d more=%v", n, more)
 	}
 }
+
+func TestStartThinking_WhileBusy(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ThinkingPhrases = []string{"hmm"}
+	said := make(chan string, 4)
+	a := &Actor{cfg: cfg, outputFunc: func(s string) { said <- s }}
+
+	a.StartThinking()
+	a.StartThinking()
+	select {
+	case s := <-said:
+		if s != "hmm" {
+			t.Errorf("said %q", s)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no thinking phrase")
+	}
+	a.stopThinking()
+	a.stopThinking()
+	select {
+	case s := <-said:
+		t.Errorf("second StartThinking should not start another run, got %q", s)
+	case <-time.After(50 * time.Millisecond):
+	}
+}

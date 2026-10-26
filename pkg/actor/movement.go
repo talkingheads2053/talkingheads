@@ -117,6 +117,17 @@ const (
 	CommandHeadShake  = "headshake"
 )
 
+// movementCall builds a tool_movement call.
+func movementCall(command, target string) message.ToolCall {
+	return message.ToolCall{
+		Type: "function",
+		Function: message.ToolFunction{
+			Name:      "tool_movement",
+			Arguments: map[string]string{"command": command, "target": target},
+		},
+	}
+}
+
 // interjections are the special movements that run at most once per show.
 var interjections = map[string]bool{
 	CommandSlowLook:   true,
@@ -132,7 +143,7 @@ const (
 	// firmware stops after 5 seconds without a command.
 	keepaliveInterval = 2 * time.Second
 	// restDelay is how long a head waits with nothing to do before it rests.
-	restDelay = 3 * time.Second
+	restDelay = time.Second
 )
 
 // MovementOptions configures a Movement.
@@ -324,6 +335,14 @@ func (m *Movement) RestSoon() {
 	defer m.mu.Unlock()
 	m.cancelRest()
 	m.rest = time.AfterFunc(m.restAfter, m.Rest)
+}
+
+// Wake cancels a pending rest and reports whether the head is resting.
+func (m *Movement) Wake() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cancelRest()
+	return m.mode == ""
 }
 
 // Rest stops the head now.

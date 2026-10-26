@@ -43,11 +43,46 @@ type MQTTListener struct {
 	speakCond *sync.Cond
 	speakN    int // number of phrases issued but not yet StatusStopped
 
-	movement *Movement
-	runCalls func([]message.ToolCall)
-	cueMu    sync.Mutex
-	cue      []message.ToolCall // calls for the next phrase published
-	cued     []*cuedPhrase      // published phrases in order
+	movement    *Movement
+	runCalls    func([]message.ToolCall)
+	onDirection func()
+	cueMu       sync.Mutex
+	cue         []message.ToolCall // calls for the next phrase published
+	cued        []*cuedPhrase      // published phrases in order
+	voices      map[string]*voiceState
+	heardWho    string // actor and phrase of the line heard last
+	heardPhrase int
+}
+
+// voiceState follows one actor's phrases through the dialogue. The dialogue
+// repeats speaking while a phrase plays, so only the first one starts a phrase.
+type voiceState struct {
+	published int
+	started   int
+	playing   bool
+	held      []heldCalls
+	thinking  map[int]bool // published phrases that are thinking phrases
+}
+
+// heldCalls are reaction calls waiting for a heard phrase to start playing.
+type heldCalls struct {
+	phrase int
+	calls  []message.ToolCall
+}
+
+// release returns the held calls whose phrase has started.
+func (v *voiceState) release() []message.ToolCall {
+	var out []message.ToolCall
+	keep := v.held[:0]
+	for _, h := range v.held {
+		if h.phrase <= v.started {
+			out = append(out, h.calls...)
+		} else {
+			keep = append(keep, h)
+		}
+	}
+	v.held = keep
+	return out
 }
 
 // cuedPhrase holds the calls for one published phrase.
@@ -69,11 +104,65 @@ func (l *MQTTListener) SetMovement(m *Movement, run func([]message.ToolCall)) {
 	l.runCalls = run
 }
 
+// SetDirectionFunc registers a function called as soon as a direction
+// arrives, such as starting thinking phrases while the model is still busy.
+func (l *MQTTListener) SetDirectionFunc(fn func()) {
+	l.onDirection = fn
+}
+
 // Cue holds calls until the next phrase is published.
 func (l *MQTTListener) Cue(calls []message.ToolCall) {
 	l.cueMu.Lock()
 	defer l.cueMu.Unlock()
 	l.cue = append(l.cue, calls...)
+}
+
+// CueHeard holds reaction calls until the line heard last starts playing. If
+// that line already played, they run only while the speaker is still talking.
+func (l *MQTTListener) CueHeard(calls []message.ToolCall) {
+	l.cueMu.Lock()
+	if v := l.voices[l.heardWho]; v != nil {
+		switch {
+		case v.started < l.heardPhrase:
+			v.held = append(v.held, heldCalls{phrase: l.heardPhrase, calls: calls})
+			calls = nil
+		case !v.playing:
+			calls = nil
+		}
+	}
+	l.cueMu.Unlock()
+	if len(calls) > 0 && l.runCalls != nil {
+		l.runCalls(calls)
+	}
+}
+
+// voice returns the playback state for who. Call with cueMu held.
+func (l *MQTTListener) voice(who string) *voiceState {
+	if l.voices == nil {
+		l.voices = make(map[string]*voiceState)
+	}
+	v := l.voices[who]
+	if v == nil {
+		v = &voiceState{}
+		l.voices[who] = v
+	}
+	return v
+}
+
+// notePublished counts a phrase another actor sent to the dialogue.
+func (l *MQTTListener) notePublished(who string, thinking bool) {
+	l.cueMu.Lock()
+	defer l.cueMu.Unlock()
+	v := l.voice(who)
+	v.published++
+	if thinking {
+		if v.thinking == nil {
+			v.thinking = make(map[int]bool)
+		}
+		v.thinking[v.published] = true
+	} else {
+		l.heardWho, l.heardPhrase = who, v.published
+	}
 }
 
 // DirectionPending reports whether a direction is waiting to be answered.
@@ -264,6 +353,9 @@ func (l *MQTTListener) handleDirection(_ mqtt.Client, msg mqtt.Message) {
 
 	l.emit(fmt.Sprintf("Director: %q", text))
 	l.enqueue(text)
+	if l.onDirection != nil {
+		l.onDirection()
+	}
 }
 
 func (l *MQTTListener) handleSpeakingStatus(_ mqtt.Client, msg mqtt.Message) {
@@ -272,12 +364,20 @@ func (l *MQTTListener) handleSpeakingStatus(_ mqtt.Client, msg mqtt.Message) {
 		log.Printf("Failed to unmarshal speaking message: %v\n", err)
 		return
 	}
+	calls, started := l.playback(s.Who, s.Status)
+	if started && l.movement != nil && l.movement.Wake() && !setsMode(calls) {
+		// The head rested in a pause, so pick the mode up again.
+		wake := movementCall(CommandListen, s.Who)
+		if s.Who == l.name {
+			wake = movementCall(CommandTalk, "")
+		}
+		calls = append([]message.ToolCall{wake}, calls...)
+	}
+	if len(calls) > 0 && l.runCalls != nil {
+		l.runCalls(calls)
+	}
 	if s.Who == l.name {
 		switch s.Status {
-		case commands.StatusSpeaking:
-			if calls := l.nextCued(); len(calls) > 0 && l.runCalls != nil {
-				l.runCalls(calls)
-			}
 		case commands.StatusStopped:
 			l.speakMu.Lock()
 			if l.speakN > 0 {
@@ -297,20 +397,65 @@ func (l *MQTTListener) handleSpeakingStatus(_ mqtt.Client, msg mqtt.Message) {
 	}
 }
 
-// takeCue gives the cued calls to a phrase being published.
-func (l *MQTTListener) takeCue() *cuedPhrase {
+// setsMode reports whether calls pick a talk or listen mode.
+func setsMode(calls []message.ToolCall) bool {
+	for _, c := range calls {
+		switch c.Function.Arguments["command"] {
+		case CommandTalk, CommandListen:
+			return true
+		}
+	}
+	return false
+}
+
+// playback follows the phrases of who and returns the calls to run when one
+// starts, and whether one started.
+func (l *MQTTListener) playback(who, status string) ([]message.ToolCall, bool) {
 	l.cueMu.Lock()
 	defer l.cueMu.Unlock()
-	phrase := &cuedPhrase{calls: l.cue}
-	l.cue = nil
+	v := l.voice(who)
+	switch status {
+	case commands.StatusSpeaking:
+		if v.playing {
+			return nil, false
+		}
+		v.playing = true
+		v.started++
+		if who == l.name {
+			return l.nextCued(), true
+		}
+		calls := v.release()
+		if v.thinking[v.started] {
+			// The speaker is thinking, so face them before their reply.
+			delete(v.thinking, v.started)
+			calls = append([]message.ToolCall{movementCall(CommandListen, who)}, calls...)
+		}
+		return calls, true
+	case commands.StatusStopped:
+		v.playing = false
+	}
+	return nil, false
+}
+
+// takeCue gives the cued calls to a phrase being published. Thinking phrases
+// leave them for the reply and start talking on their own.
+func (l *MQTTListener) takeCue(thinking bool) *cuedPhrase {
+	l.cueMu.Lock()
+	defer l.cueMu.Unlock()
+	phrase := &cuedPhrase{}
+	if thinking {
+		phrase.calls = []message.ToolCall{movementCall(CommandTalk, Audience)}
+	} else {
+		phrase.calls = l.cue
+		l.cue = nil
+	}
 	l.cued = append(l.cued, phrase)
 	return phrase
 }
 
 // nextCued returns the calls cued for the phrase the dialogue started speaking.
+// Call with cueMu held.
 func (l *MQTTListener) nextCued() []message.ToolCall {
-	l.cueMu.Lock()
-	defer l.cueMu.Unlock()
 	for len(l.cued) > 0 {
 		p := l.cued[0]
 		l.cued = l.cued[1:]
@@ -326,6 +471,9 @@ func (l *MQTTListener) handleSpeak(_ mqtt.Client, msg mqtt.Message) {
 	if err := json.Unmarshal(msg.Payload(), &s); err != nil {
 		log.Printf("Failed to unmarshal speak message: %v\n", err)
 		return
+	}
+	if s.Who != l.name {
+		l.notePublished(s.Who, s.Thinking)
 	}
 	// Ignore thinking phrases — they are filler content spoken while the model
 	// is generating and should not enter other actors' conversation context.
@@ -519,7 +667,7 @@ func (l *MQTTListener) makeOutputFunc(thinking bool) func(string) {
 		l.speakN++
 		l.speakMu.Unlock()
 
-		phrase := l.takeCue()
+		phrase := l.takeCue(thinking)
 
 		topic := "speak/" + l.name
 		go func() {

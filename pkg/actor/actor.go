@@ -42,10 +42,15 @@ type Actor struct {
 	speakingDoneFunc     func()
 	rejectFunc           func(sentence string) bool
 	cueFunc              func(calls []message.ToolCall)
+	heardCueFunc         func(calls []message.ToolCall)
 	interruptFunc        func() bool
 	tools                map[string]Tool
 	toolsJSON            string
 	movement             *Movement
+
+	thinkMu      sync.Mutex
+	thinkDone    chan struct{} // open while thinking phrases run
+	nextThinking func() string
 }
 
 // NewActor creates a new instance of Actor.
@@ -104,6 +109,11 @@ func NewActor(modelPath string, cfg Config, commander Commander, moreFunc func(c
 
 	// Resolve the model format first — we need it to pick the right fallback
 	// chat template when the model file carries no tokenizer.chat_template.
+	// Check the architecture first, since actor names like gemmai or phineas
+	// match other model families by path.
+	if arch, ok := llama.ModelMetaValStr(mdl, "general.architecture"); ok && cfg.ModelFormat == message.FormatAuto && strings.HasPrefix(arch, "lfm") {
+		cfg.ModelFormat = message.FormatLFM
+	}
 	if cfg.ModelFormat == message.FormatAuto {
 		cfg.ModelFormat = message.DetectFormatFromPath(modelPath)
 	}
@@ -454,7 +464,11 @@ func (a *Actor) react(ctx context.Context, conversation *[]message.Message) {
 	if len(calls) == 0 {
 		return
 	}
-	a.RunToolCalls(calls)
+	if a.heardCueFunc != nil {
+		a.heardCueFunc(calls)
+	} else {
+		a.RunToolCalls(calls)
+	}
 	*conversation = append(*conversation, message.Chat{Role: "assistant", Content: raw})
 }
 
@@ -483,6 +497,12 @@ func (a *Actor) Movement() *Movement {
 // they run when the phrase is emitted.
 func (a *Actor) SetCueFunc(fn func(calls []message.ToolCall)) {
 	a.cueFunc = fn
+}
+
+// SetHeardCueFunc registers where listening reactions go, so they run when the
+// heard line plays. Without it they run at once.
+func (a *Actor) SetHeardCueFunc(fn func(calls []message.ToolCall)) {
+	a.heardCueFunc = fn
 }
 
 // SetInterruptFunc registers a check that stops a listening reaction, such as
@@ -541,10 +561,7 @@ func (a *Actor) Run(ctx context.Context, systemPrompt string) error {
 	needMoreInput := true
 	consecutiveToolOnlyTurns := 0
 
-	nextThinkingPhrase := a.setupThinkingPhrases()
-
 	for {
-		var thinkingDone chan struct{}
 		if needMoreInput {
 			consecutiveToolOnlyTurns = 0
 			before := len(conversation)
@@ -562,26 +579,11 @@ func (a *Actor) Run(ctx context.Context, systemPrompt string) error {
 				}
 			}
 
-			if len(a.cfg.ThinkingPhrases) > 0 && a.outputFunc != nil {
-				thinkingDone = make(chan struct{})
-				go a.runThinkingPhrases(thinkingDone, nextThinkingPhrase)
-			}
+			a.StartThinking()
 		}
 
-		// Build a one-shot stop function that closes thinkingDone the first time
-		// it is called. It is passed into generateTurn so that thinking phrases
-		// are cut off as soon as the model produces its first token rather
-		// than after the full generation completes.
-		thinkingStopped := false
-		stopPausing := func() {
-			if !thinkingStopped && thinkingDone != nil {
-				thinkingStopped = true
-				close(thinkingDone)
-			}
-		}
-
-		turn, err := a.generateTurn(ctx, &conversation, stopPausing)
-		stopPausing() // no-op if already triggered on the first token
+		turn, err := a.generateTurn(ctx, &conversation, a.stopThinking)
+		a.stopThinking()
 		if err != nil {
 			return err
 		}
@@ -714,6 +716,31 @@ func (a *Actor) SetRejectFunc(fn func(sentence string) bool) {
 // before the reply ends there.
 const maxRejectRetries = 3
 
+// StartThinking starts the thinking phrases for the next reply unless they
+// already run. Call it when a direction arrives, even while the model is busy.
+func (a *Actor) StartThinking() {
+	a.thinkMu.Lock()
+	defer a.thinkMu.Unlock()
+	if a.thinkDone != nil || len(a.cfg.ThinkingPhrases) == 0 || a.outputFunc == nil {
+		return
+	}
+	if a.nextThinking == nil {
+		a.nextThinking = a.setupThinkingPhrases()
+	}
+	a.thinkDone = make(chan struct{})
+	go a.runThinkingPhrases(a.thinkDone, a.nextThinking)
+}
+
+// stopThinking stops the thinking phrases if they run.
+func (a *Actor) stopThinking() {
+	a.thinkMu.Lock()
+	defer a.thinkMu.Unlock()
+	if a.thinkDone != nil {
+		close(a.thinkDone)
+		a.thinkDone = nil
+	}
+}
+
 // setupThinkingPhrases builds a shuffled deck of thinking phrases and returns a
 // function that yields the next phrase, reshuffling when the deck is exhausted.
 // A mutex guards the deck so the goroutine from the previous turn may still be
@@ -817,6 +844,13 @@ func (a *Actor) generateTurn(ctx context.Context, conversation *[]message.Messag
 	if a.streamsCalls() {
 		stream.calls = true
 		stream.cue = a.cue
+		// The reply starts with tool calls, so keep thinking until a sentence is ready.
+		if a.outputFunc != nil {
+			stream.emit = func(s string) {
+				stopPausing()
+				a.outputFunc(s)
+			}
+		}
 	}
 
 	// gen holds the tokens generated this turn and ends the length of buf
@@ -849,12 +883,23 @@ generateLoop:
 				}
 			}
 		}
+		// A streamed reply may not end on tool calls alone, such as a listen
+		// call after a respond direction.
+		if a.streamsCalls() && !hasSpeech(buf.String()) {
+			if logits, err := llama.GetLogitsIth(a.llamaCtx, -1, nVocab); err == nil && logits != nil {
+				for _, t := range []llama.Token{llama.VocabEOS(a.vocab), llama.VocabEOT(a.vocab)} {
+					if t >= 0 && int(t) < nVocab {
+						logits[t] = float32(math.Inf(-1))
+					}
+				}
+			}
+		}
 		token := llama.SamplerSample(a.sampler, a.llamaCtx, -1)
 		if llama.VocabIsEOG(a.vocab, token) {
 			break
 		}
 		tokenCount++
-		if tokenCount == 1 {
+		if tokenCount == 1 && !a.streamsCalls() {
 			stopPausing()
 		}
 
@@ -941,6 +986,25 @@ generateLoop:
 		return turnResult{spoken: spoken, hadText: hadText, calls: toolCalls, raw: text}, nil
 	}
 	return turnResult{spoken: spoken, raw: text}, nil
+}
+
+// hasSpeech reports whether raw has text outside LFM tool call blocks.
+func hasSpeech(raw string) bool {
+	for raw != "" {
+		i := strings.Index(raw, lfmCallStart)
+		if i < 0 {
+			return strings.TrimSpace(raw) != ""
+		}
+		if strings.TrimSpace(raw[:i]) != "" {
+			return true
+		}
+		end := strings.Index(raw[i:], lfmCallEnd)
+		if end < 0 {
+			return false
+		}
+		raw = raw[i+end+len(lfmCallEnd):]
+	}
+	return false
 }
 
 // turnResult is what one generated turn produced.
