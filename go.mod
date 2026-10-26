@@ -8,7 +8,7 @@ require (
 	github.com/eclipse/paho.mqtt.golang v1.4.3
 	github.com/gordonklaus/portaudio v0.0.0-20260203164431-765aa7dfa631
 	github.com/hybridgroup/yzma v1.30.1-0.20261026084950-3887a1bfe576
-	github.com/talkingheads2053/sayanything v0.1.1-0.20261026190848-38a8dd40b9c4
+	github.com/talkingheads2053/sayanything v0.1.1-0.20261026191312-88d05b731b18
 	go.bug.st/serial v1.6.4
 	golang.org/x/term v0.45.0
 )

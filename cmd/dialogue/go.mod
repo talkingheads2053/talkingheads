@@ -56,7 +56,7 @@ require (
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	github.com/talkingheads2053/sayanything v0.1.1-0.20261026190848-38a8dd40b9c4 // indirect
+	github.com/talkingheads2053/sayanything v0.1.1-0.20261026191312-88d05b731b18 // indirect
 	github.com/tosone/minimp3 v1.0.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342 // indirect
