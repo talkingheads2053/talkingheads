@@ -107,6 +107,21 @@ Hello! I'm doing wonderfully today.
 
 A response with only <function=…></function> blocks and no plain text is ALWAYS wrong.`, toolsJSON)
 	}
+	if format == message.FormatLFM {
+		return systemPrompt + fmt.Sprintf(`
+List of tools: %s
+
+When you need to use a tool, write the call as a Python list between the tool call tokens:
+<|tool_call_start|>[tool_movement(command="look", angle=90)]<|tool_call_end|>
+
+IMPORTANT: Your spoken words MUST appear as plain text OUTSIDE the tool call tokens.
+Tool calls are physical action cues only. They do NOT replace spoken text.
+
+Example of a correct response:
+<|tool_call_start|>[tool_movement(command="look", angle=45)]<|tool_call_end|>Hello! I'm doing wonderfully today.
+
+A response with only tool calls and no plain text is ALWAYS wrong.`, toolsJSON)
+	}
 	return systemPrompt + fmt.Sprintf(`
 
 You have access to the following tools:

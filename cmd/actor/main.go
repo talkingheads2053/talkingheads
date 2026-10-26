@@ -123,7 +123,7 @@ func main() {
 			},
 			&cli.StringFlag{
 				Name:  "model-format",
-				Usage: "override the model format used for tool-call grammar (auto, standard, qwen, glm, mistral, gemma3, gemma, gpt, phi); default is auto-detect from model name",
+				Usage: "override the model format used for tool-call grammar (auto, standard, qwen, glm, mistral, gemma3, gemma, gpt, phi, lfm); default is auto-detect from model name",
 				Value: "auto",
 			},
 			&cli.BoolFlag{
@@ -452,6 +452,8 @@ func parseModelFormat(s string) message.Format {
 		return message.FormatGPT
 	case "phi":
 		return message.FormatPhi
+	case "lfm":
+		return message.FormatLFM
 	default:
 		return message.FormatAuto
 	}
