@@ -37,6 +37,9 @@ var (
 
 	hotmicStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("214")) // orange
+
+	sceneStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252"))
 )
 
 // ── messages ──────────────────────────────────────────────────────────────────
@@ -53,6 +56,12 @@ type hotmicTranscriptMsg struct {
 // questionSentMsg is sent after a question has been delivered to the
 // conversation channel.
 type questionSentMsg struct{ q question }
+
+// sceneCueMsg is sent after the actor lines of a scene step have been sent.
+type sceneCueMsg struct {
+	display []string
+	last    bool
+}
 
 // ── commands ──────────────────────────────────────────────────────────────────
 
@@ -115,6 +124,10 @@ type tuiModel struct {
 
 	// accumulated output lines rendered inside the viewport
 	lines []string
+
+	// scene being run and the index of its next step
+	scene     []sceneStep
+	sceneNext int
 }
 
 // newTUIModel constructs the initial model.
@@ -199,7 +212,24 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			text := strings.TrimSpace(m.input.Value())
 			m.input.Reset()
 			if text == "" {
+				if m.scene != nil {
+					return m, m.nextSceneStep()
+				}
 				return m, nil
+			}
+			if file, ok := parseSceneCommand(text, actors); ok {
+				if file == "" {
+					m.appendLine(errorStyle.Render("error: usage: scene <file>"))
+					return m, nil
+				}
+				steps, err := loadScene(file, actors)
+				if err != nil {
+					m.appendLine(errorStyle.Render("error: " + err.Error()))
+					return m, nil
+				}
+				m.scene = steps
+				m.sceneNext = 0
+				return m, m.nextSceneStep()
 			}
 			q, err := parseTypedInput(text, actors)
 			if err != nil {
@@ -250,6 +280,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.vp, vpCmd = m.vp.Update(msg)
 		return m, tea.Batch(vpCmd, sendQuestionCmd(m.questions, q))
 
+	// ── scene cues ────────────────────────────────────────────────────────────
+	case sceneCueMsg:
+		for _, p := range msg.display {
+			m.appendLine(sceneStyle.Width(m.width).Render(p))
+			m.appendLine("")
+		}
+		if msg.last {
+			m.appendLine(statusStyle.Render("end of scene"))
+		} else {
+			m.appendLine(hotmicStyle.Render("Press RETURN"))
+		}
+		m.vp, vpCmd = m.vp.Update(msg)
+		return m, vpCmd
+
 	// ── question confirmation ─────────────────────────────────────────────────
 	case questionSentMsg:
 		if msg.q.Kind == kindDance {
@@ -281,6 +325,26 @@ func danceLabel(music commands.Music) string {
 	default:
 		return "♪ stop dancing"
 	}
+}
+
+// nextSceneStep sends the actor lines of the next scene step in order, then
+// cues the text to show until the following step.
+func (m *tuiModel) nextSceneStep() tea.Cmd {
+	step := m.scene[m.sceneNext]
+	m.sceneNext++
+	last := m.sceneNext == len(m.scene)
+	if last {
+		m.scene = nil
+	}
+
+	cmds := make([]tea.Cmd, 0, len(step.Lines)+1)
+	for _, q := range step.Lines {
+		cmds = append(cmds, sendQuestionCmd(m.questions, q))
+	}
+	cmds = append(cmds, func() tea.Msg {
+		return sceneCueMsg{display: step.Display, last: last}
+	})
+	return tea.Sequence(cmds...)
 }
 
 // appendLine adds a line to the viewport content and scrolls to the bottom.

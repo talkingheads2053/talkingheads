@@ -102,6 +102,26 @@ dance stop
 
 Each head swings left and right on every beat. For a fast song, give half the tempo. These are published to the `music` topic.
 
+## Scenes
+
+Run a scripted scene from a screenplay file:
+
+```
+scene scene-one.md
+```
+
+Paragraphs are separated by blank lines. A paragraph that is only an actor name makes the next paragraph that actor's line:
+
+```
+PHINEAS
+
+Good morning.
+```
+
+Actor lines are spoken with `say`, so they are not added to any actor's conversation history. Every other paragraph is shown on screen, including lines for characters who are not actors and stage directions.
+
+The director speaks actor lines until it reaches text that is not for an actor. It shows that text up to the next actor line along with `Press RETURN`. Press **Enter** on an empty input to continue. Other commands can still be typed while a scene is running. Starting a new scene replaces the current one.
+
 ## Hotmic input
 
 When `--hotmic-model` is set, press the hotmic key (default **F5**) once to start recording and again to stop. The audio is transcribed locally using whisper.cpp and submitted automatically. The spoken format is the same as typed input: `"<actor>: <question>"`.
