@@ -105,4 +105,4 @@ Actor turns each `tool_movement` call from the model into these commands. See [p
 | `facecrowd` | `slowlook 90` |
 | `headshake` | `headshake` |
 
-While the heads dance, Actor skips movement calls from the model and sends `dance 150`, `dance 90` or `dance 30` on each beat for the moves `L`, `C` and `R` instead. A repeated move dips 30 degrees toward center and back.
+While the heads dance, Actor skips movement calls from the model and sends `dance 125`, `dance 90` or `dance 55` on each beat for the moves `L`, `C` and `R` instead. A repeated move dips 15 degrees toward center and back.

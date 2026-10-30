@@ -148,17 +148,17 @@ const (
 	// danceTimeout ends a dance when the beats stop arriving.
 	danceTimeout = 3 * time.Second
 	// danceBounce is how far a repeated dance move dips before it returns.
-	danceBounce = 30
+	danceBounce = 15
 	// danceBounceTime is how long a repeated dance move stays dipped.
 	danceBounceTime = 150 * time.Millisecond
 )
 
-// danceAngles maps each dance move to its angle, within the 30–150 range
-// used for facing other actors.
+// danceAngles maps each dance move to its angle. A wider swing falls behind
+// the beat because the servo cannot finish the turn in time.
 var danceAngles = map[string]int{
-	commands.MoveLeft:   150,
+	commands.MoveLeft:   125,
 	commands.MoveCenter: 90,
-	commands.MoveRight:  30,
+	commands.MoveRight:  55,
 }
 
 // MovementOptions configures a Movement.
