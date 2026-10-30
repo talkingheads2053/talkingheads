@@ -1,6 +1,6 @@
 .ONESHELL:
 
-test: test-pkg test-hotmic test-action test-director
+test: test-pkg test-hotmic test-action test-director test-actor
 
 test-pkg:
 	go test -v $(shell go list ./pkg/... | grep -v hotmic)
@@ -13,6 +13,9 @@ test-director:
 
 test-action:
 	cd action && go test -v
+
+test-actor:
+	cd ./cmd/actor && go test ./...
 
 clean:
 	rm -rf build
