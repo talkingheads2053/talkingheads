@@ -47,11 +47,17 @@ func parseTypedInput(text string, actorList []string) (question, error) {
 	return question{To: to, Content: content, Kind: kind, RespondTo: respondTo}, nil
 }
 
-var errDanceUsage = errors.New("usage: dance <file> <bpm> [offset], dance start, or dance stop")
+var errDanceUsage = errors.New("usage: dance <file> <bpm> [offset], dance moves [L|R ...], dance start, or dance stop")
+
+// defaultDanceMoves is the pattern used when "dance moves" names none.
+const defaultDanceMoves = "L R"
 
 // parseDance parses the words after "dance" into a music question.
 func parseDance(s string) (question, error) {
 	fields := strings.Fields(s)
+	if len(fields) > 0 && strings.EqualFold(fields[0], "moves") {
+		return parseDanceMoves(fields[1:])
+	}
 	if len(fields) == 1 {
 		switch strings.ToLower(fields[0]) {
 		case "start":
@@ -75,6 +81,23 @@ func parseDance(s string) (question, error) {
 	}
 	music := commands.Music{Command: commands.MusicLoad, File: fields[0], BPM: bpm, Offset: offset}
 	return question{Kind: kindDance, Music: music}, nil
+}
+
+// parseDanceMoves turns moves such as "L R L L" into a music question.
+func parseDanceMoves(fields []string) (question, error) {
+	moves := make([]string, 0, len(fields))
+	for _, f := range fields {
+		move := strings.ToUpper(f)
+		if move != commands.MoveLeft && move != commands.MoveRight {
+			return question{}, fmt.Errorf("invalid dance move %q, expected L or R", f)
+		}
+		moves = append(moves, move)
+	}
+	pattern := defaultDanceMoves
+	if len(moves) > 0 {
+		pattern = strings.Join(moves, " ")
+	}
+	return question{Kind: kindDance, Music: commands.Music{Command: commands.MusicMoves, Moves: pattern}}, nil
 }
 
 // stripRespondTarget splits an actor name, optionally after "to", off the

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hybridgroup/yzma/pkg/message"
+	"github.com/talkingheads2053/talkingheads/pkg/commands"
 	"go.bug.st/serial"
 )
 
@@ -371,15 +372,15 @@ func (m *Movement) Rest() {
 	_ = m.commander.Send("stop")
 }
 
-// Dance swings the head left on even beats and right on odd beats. Other
-// movement waits until StopDance or until the beats stop arriving.
-func (m *Movement) Dance(beat int) {
+// Dance turns the head left or right for one beat. Other movement waits
+// until StopDance or until the beats stop arriving.
+func (m *Movement) Dance(move string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cancelRest()
 	m.dancing = true
 	angle := danceLeft
-	if beat%2 != 0 {
+	if move == commands.MoveRight {
 		angle = danceRight
 	}
 	_ = m.commander.Send(fmt.Sprintf("dance %d", angle))

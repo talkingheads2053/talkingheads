@@ -43,19 +43,23 @@ const (
 )
 
 // Music is the payload for the music MQTT topic.
-// Command is MusicLoad, MusicPlay or MusicStop. Offset is the seconds to the first beat.
+// Command is MusicLoad, MusicPlay, MusicStop or MusicMoves. Offset is the seconds to the first beat.
+// Moves is the dance pattern for MusicMoves, such as "L R".
 type Music struct {
     Command string  `json:"command"`
     File    string  `json:"file,omitempty"`
     BPM     float64 `json:"bpm,omitempty"`
     Offset  float64 `json:"offset,omitempty"`
+    Moves   string  `json:"moves,omitempty"`
 }
 
 // Dance is the payload for the dance MQTT topic.
-// Status is StatusDancing on every beat, or StatusStopped when the song ends.
+// Status is StatusDancing on every beat with its Move, MoveLeft or MoveRight,
+// or StatusStopped when the song ends.
 type Dance struct {
     Status string `json:"status"`
     Beat   int    `json:"beat,omitempty"`
+    Move   string `json:"move,omitempty"`
 }
 ```
 
@@ -67,7 +71,7 @@ type Dance struct {
 | `speak/#` | → Dialogue & Actors | Actor | Dialogue, Actor | Messages spoken by an Actor |
 | `say/#` | → Dialogue | Director / external | Dialogue | Speak text via the named voice without affecting Actor conversation history |
 | `speaking/#` | → Actors | Dialogue | Actor | Notifications when speaking starts and stops |
-| `music` | → Dialogue | Director | Dialogue | Load, play, or stop a song |
+| `music` | → Dialogue | Director | Dialogue | Load, play, or stop a song, or set the dance moves |
 | `dance` | → Actors | Dialogue | Actor | A beat of the song that is playing, or that it stopped |
 
 ### `direction/#`
@@ -162,14 +166,21 @@ Then start or stop it.
 {"command": "stop"}
 ```
 
+Set the dance moves. The pattern repeats over the beats, and starts as `L R`.
+
+```json
+{"command": "moves", "moves": "L R L R L L R R"}
+```
+
 ### `dance`
 
-Published by Dialogue on every beat of the song, counting from 1.
+Published by Dialogue on every beat of the song, counting from 1, with the move for that beat.
 
 ```json
 {
     "status": "dancing",
-    "beat": 1
+    "beat": 1,
+    "move": "L"
 }
 ```
 

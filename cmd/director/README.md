@@ -90,7 +90,7 @@ The heads can dance to a song that Dialogue plays from its `--music` directory. 
 
 ```
 dance song.wav 120
-dance song.mp3 98 0.4
+dance slimeyfox-hypermafia-wickedness-590984.mp3 115 0.4
 ```
 
 Then start and stop it separately:
@@ -100,7 +100,14 @@ dance start
 dance stop
 ```
 
-Each head swings left and right on every beat. For a fast song, give half the tempo. These are published to the `music` topic.
+Each head turns left or right on every beat. Set the pattern of moves with `L` and `R`. It repeats when it ends, and can change while a song plays. With no moves given, it goes back to the default `L R`:
+
+```
+dance moves L R L R L L R R
+dance moves
+```
+
+For a fast song, give half the tempo. These are published to the `music` topic.
 
 ## Scenes
 

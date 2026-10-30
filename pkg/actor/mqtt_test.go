@@ -1098,8 +1098,8 @@ func TestHandleSpeakingStatus_PhraseStartCancelsRest(t *testing.T) {
 
 // --- handleDance ---
 
-func danceMsg(status string, beat int) *mockMessage {
-	payload, _ := json.Marshal(commands.Dance{Status: status, Beat: beat})
+func danceMsg(status, move string) *mockMessage {
+	payload, _ := json.Marshal(commands.Dance{Status: status, Move: move})
 	return &mockMessage{payload: payload, topic: "dance"}
 }
 
@@ -1109,9 +1109,9 @@ func TestHandleDance_MovesTheHead(t *testing.T) {
 	defer m.Close()
 	l.SetMovement(m, nil)
 
-	l.handleDance(nil, danceMsg(commands.StatusDancing, 1))
-	l.handleDance(nil, danceMsg(commands.StatusDancing, 2))
-	l.handleDance(nil, danceMsg(commands.StatusStopped, 0))
+	l.handleDance(nil, danceMsg(commands.StatusDancing, commands.MoveRight))
+	l.handleDance(nil, danceMsg(commands.StatusDancing, commands.MoveLeft))
+	l.handleDance(nil, danceMsg(commands.StatusStopped, ""))
 
 	want := "dance 60,dance 120,stop"
 	if got := strings.Join(mc.sent(), ","); got != want {
@@ -1121,5 +1121,5 @@ func TestHandleDance_MovesTheHead(t *testing.T) {
 
 func TestHandleDance_NoMovement(t *testing.T) {
 	l := newTestListener("gemmai")
-	l.handleDance(nil, danceMsg(commands.StatusDancing, 1))
+	l.handleDance(nil, danceMsg(commands.StatusDancing, commands.MoveLeft))
 }

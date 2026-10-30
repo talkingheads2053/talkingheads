@@ -177,6 +177,8 @@ func TestParseTypedInput_Dance(t *testing.T) {
 		{"dance song.mp3 98.5 0.4", commands.Music{Command: commands.MusicLoad, File: "song.mp3", BPM: 98.5, Offset: 0.4}},
 		{"dance start", commands.Music{Command: commands.MusicPlay}},
 		{"Dance Stop", commands.Music{Command: commands.MusicStop}},
+		{"dance moves", commands.Music{Command: commands.MusicMoves, Moves: "L R"}},
+		{"dance moves L R l r L L R R", commands.Music{Command: commands.MusicMoves, Moves: "L R L R L L R R"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
@@ -197,7 +199,7 @@ func TestParseTypedInput_Dance(t *testing.T) {
 func TestParseTypedInput_DanceErrors(t *testing.T) {
 	actors := []string{"gemmai", "phineas", "qwentin"}
 
-	for _, in := range []string{"dance", "dance song.wav", "dance song.wav fast", "dance song.wav 0", "dance song.wav 120 soon", "dance a b c d"} {
+	for _, in := range []string{"dance", "dance song.wav", "dance song.wav fast", "dance song.wav 0", "dance song.wav 120 soon", "dance a b c d", "dance moves L X"} {
 		t.Run(in, func(t *testing.T) {
 			if _, err := parseTypedInput(in, actors); err == nil {
 				t.Errorf("expected an error for %q", in)

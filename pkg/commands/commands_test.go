@@ -103,7 +103,7 @@ func TestDirection_Respond_FalseWhenAbsentInJSON(t *testing.T) {
 }
 
 func TestMusic_RoundTrip(t *testing.T) {
-	original := Music{Command: MusicLoad, File: "song.wav", BPM: 120, Offset: 0.5}
+	original := Music{Command: MusicLoad, File: "song.wav", BPM: 120, Offset: 0.5, Moves: "L R"}
 	b, err := json.Marshal(original)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
@@ -118,7 +118,7 @@ func TestMusic_RoundTrip(t *testing.T) {
 }
 
 func TestDance_RoundTrip(t *testing.T) {
-	original := Dance{Status: StatusDancing, Beat: 7}
+	original := Dance{Status: StatusDancing, Beat: 7, Move: MoveRight}
 	b, err := json.Marshal(original)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
