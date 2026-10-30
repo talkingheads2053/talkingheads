@@ -1,5 +1,7 @@
 ![Talking Heads From The Year 2053](./images/th2053-logo-red.png)
 
+[![Test](https://github.com/talkingheads2053/talkingheads/actions/workflows/test.yml/badge.svg)](https://github.com/talkingheads2053/talkingheads/actions/workflows/test.yml)
+
 ## Conversations With Our Future Robot Overlords (and their pet human)
 
 The show that finally answers your most important questions about the future, *from* the future!
