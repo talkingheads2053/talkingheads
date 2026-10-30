@@ -225,15 +225,15 @@ func TestStageAngleFor_FallsBackToAudience(t *testing.T) {
 
 // --- Dance ---
 
-func TestMovementDance_SwingsOnEachBeat(t *testing.T) {
+func TestMovementDance_TurnsForEachMove(t *testing.T) {
 	m, mc := newTestMovement()
 	defer m.Close()
 
-	for beat := 1; beat <= 4; beat++ {
-		m.Dance(beat)
+	for _, move := range []string{"L", "R", "L", "L"} {
+		m.Dance(move)
 	}
 
-	want := []string{"dance 60", "dance 120", "dance 60", "dance 120"}
+	want := []string{"dance 120", "dance 60", "dance 120", "dance 120"}
 	if got := mc.sent(); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("sent %v, want %v", got, want)
 	}
@@ -243,7 +243,7 @@ func TestMovementDance_SkipsModelMovement(t *testing.T) {
 	m, mc := newTestMovement()
 	defer m.Close()
 
-	m.Dance(1)
+	m.Dance("L")
 	resp := move(m, map[string]string{"command": "headshake"})
 	m.RestSoon()
 	m.Rest()
@@ -267,7 +267,7 @@ func TestMovementDance_KeepaliveSilent(t *testing.T) {
 	defer m.Close()
 
 	move(m, map[string]string{"command": "talk"})
-	m.Dance(1)
+	m.Dance("L")
 	n := len(mc.sent())
 	time.Sleep(40 * time.Millisecond)
 
@@ -281,12 +281,12 @@ func TestMovementStopDance_Rests(t *testing.T) {
 	defer m.Close()
 
 	move(m, map[string]string{"command": "talk"})
-	m.Dance(1)
+	m.Dance("L")
 	m.StopDance()
 	m.StopDance()
 
 	got := mc.sent()
-	if got[len(got)-1] != "stop" || got[len(got)-2] != "dance 60" {
+	if got[len(got)-1] != "stop" || got[len(got)-2] != "dance 120" {
 		t.Errorf("expected one stop after the dance, got %v", got)
 	}
 	if !m.Wake() {
@@ -299,7 +299,7 @@ func TestMovementDance_EndsWhenBeatsStop(t *testing.T) {
 	m.danceFor = 10 * time.Millisecond
 	defer m.Close()
 
-	m.Dance(1)
+	m.Dance("L")
 	time.Sleep(40 * time.Millisecond)
 
 	if got := mc.sent(); got[len(got)-1] != "stop" {

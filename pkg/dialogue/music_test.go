@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ func newTestMusic(t *testing.T, length time.Duration) (*Music, *mockMQTTClient) 
 		t.Fatal(err)
 	}
 	client := &mockMQTTClient{}
-	return &Music{client: client, dir: dir, player: &fakePlayer{length: length}, emit: func(string) {}}, client
+	return &Music{client: client, dir: dir, player: &fakePlayer{length: length}, emit: func(string) {}, moves: defaultMoves}, client
 }
 
 func dances(t *testing.T, client *mockMQTTClient) []commands.Dance {
@@ -121,9 +122,9 @@ func TestMusicPlay_BeatsThenStops(t *testing.T) {
 
 	got := dances(t, client)
 	want := []commands.Dance{
-		{Status: commands.StatusDancing, Beat: 1},
-		{Status: commands.StatusDancing, Beat: 2},
-		{Status: commands.StatusDancing, Beat: 3},
+		{Status: commands.StatusDancing, Beat: 1, Move: commands.MoveLeft},
+		{Status: commands.StatusDancing, Beat: 2, Move: commands.MoveRight},
+		{Status: commands.StatusDancing, Beat: 3, Move: commands.MoveLeft},
 		{Status: commands.StatusStopped},
 	}
 	if len(got) != len(want) {
@@ -133,6 +134,32 @@ func TestMusicPlay_BeatsThenStops(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("message %d = %v, want %v", i, got[i], want[i])
 		}
+	}
+}
+
+func TestMusicMoves_RepeatPattern(t *testing.T) {
+	m, _ := newTestMusic(t, 0)
+	if err := m.SetMoves([]string{"L", "L", "R"}); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for n := 1; n <= 7; n++ {
+		got = append(got, m.move(n))
+	}
+	if want := "L L R L L R L"; strings.Join(got, " ") != want {
+		t.Errorf("got %v, want %s", got, want)
+	}
+}
+
+func TestMusicMoves_Errors(t *testing.T) {
+	m, _ := newTestMusic(t, 0)
+	for _, moves := range [][]string{nil, {"L", "X"}} {
+		if err := m.SetMoves(moves); err == nil {
+			t.Errorf("expected an error for %v", moves)
+		}
+	}
+	if got := m.move(2); got != commands.MoveRight {
+		t.Errorf("default move for beat 2 = %q, want R", got)
 	}
 }
 
@@ -163,6 +190,10 @@ func TestHandleMusic(t *testing.T) {
 		m.handleMusic(nil, &mockMessage{payload: payload, topic: "music"})
 	}
 
+	send(commands.Music{Command: commands.MusicMoves, Moves: "R R L"})
+	if got := m.move(1); got != commands.MoveRight {
+		t.Errorf("first move = %q, want R", got)
+	}
 	send(commands.Music{Command: commands.MusicLoad, File: "song.wav", BPM: 60})
 	send(commands.Music{Command: commands.MusicPlay})
 	send(commands.Music{Command: commands.MusicStop})

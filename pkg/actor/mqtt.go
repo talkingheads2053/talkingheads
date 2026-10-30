@@ -412,7 +412,7 @@ func (l *MQTTListener) handleDance(_ mqtt.Client, msg mqtt.Message) {
 	}
 	switch d.Status {
 	case commands.StatusDancing:
-		l.movement.Dance(d.Beat)
+		l.movement.Dance(d.Move)
 	case commands.StatusStopped:
 		l.movement.StopDance()
 	}

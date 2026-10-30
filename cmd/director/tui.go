@@ -322,6 +322,8 @@ func danceLabel(music commands.Music) string {
 		return fmt.Sprintf("♪ load %s at %g bpm, first beat at %gs", music.File, music.BPM, music.Offset)
 	case commands.MusicPlay:
 		return "♪ start dancing"
+	case commands.MusicMoves:
+		return "♪ dance moves " + music.Moves
 	default:
 		return "♪ stop dancing"
 	}

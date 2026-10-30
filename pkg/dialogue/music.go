@@ -20,6 +20,8 @@ type musicPlayer interface {
 	Play(ctx context.Context, b []byte, format string, started func()) error
 }
 
+var defaultMoves = []string{commands.MoveLeft, commands.MoveRight}
+
 type song struct {
 	file   string
 	format string
@@ -38,13 +40,14 @@ type Music struct {
 
 	mu     sync.Mutex
 	song   *song
+	moves  []string
 	cancel context.CancelFunc
 }
 
 // NewMusic subscribes to the music topic using the Listener's MQTT connection.
 // Songs are loaded from dir.
 func NewMusic(l *Listener, dir string) (*Music, error) {
-	m := &Music{client: l.client, dir: dir, player: getSharedPlayer(), emit: l.emit}
+	m := &Music{client: l.client, dir: dir, player: getSharedPlayer(), emit: l.emit, moves: defaultMoves}
 	token := l.client.Subscribe("music", 0, m.handleMusic)
 	if token.Wait() && token.Error() != nil {
 		return nil, token.Error()
@@ -72,6 +75,12 @@ func (m *Music) handleMusic(_ mqtt.Client, msg mqtt.Message) {
 		}
 	case commands.MusicStop:
 		m.Stop()
+	case commands.MusicMoves:
+		if err := m.SetMoves(strings.Fields(c.Moves)); err != nil {
+			m.emit(fmt.Sprintf("WARNING: music %v", err))
+			return
+		}
+		m.emit(fmt.Sprintf("♪ dance moves %s", c.Moves))
 	default:
 		m.emit(fmt.Sprintf("WARNING: unknown music command %q", c.Command))
 	}
@@ -138,6 +147,34 @@ func (m *Music) Play() error {
 	return nil
 }
 
+// SetMoves sets the dance pattern that repeats over the beats. It takes effect
+// on the next beat, even while a song plays.
+func (m *Music) SetMoves(moves []string) error {
+	if len(moves) == 0 {
+		return errors.New("no dance moves")
+	}
+	for _, move := range moves {
+		if move != commands.MoveLeft && move != commands.MoveRight {
+			return fmt.Errorf("invalid dance move %q", move)
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.moves = moves
+	return nil
+}
+
+// move returns the move for beat n, counting from 1.
+func (m *Music) move(n int) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	moves := m.moves
+	if len(moves) == 0 {
+		moves = defaultMoves
+	}
+	return moves[(n-1)%len(moves)]
+}
+
 // Stop ends the song that is playing.
 func (m *Music) Stop() {
 	m.mu.Lock()
@@ -162,7 +199,7 @@ func (m *Music) beat(ctx context.Context, start time.Time, bpm, offset float64) 
 			return
 		case <-t.C:
 		}
-		m.publish(commands.Dance{Status: commands.StatusDancing, Beat: n})
+		m.publish(commands.Dance{Status: commands.StatusDancing, Beat: n, Move: m.move(n)})
 	}
 }
 
