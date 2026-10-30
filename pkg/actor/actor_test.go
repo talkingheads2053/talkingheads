@@ -2,6 +2,7 @@ package actor
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -531,6 +532,33 @@ func TestSentenceStream_EmitsCompleteSentencesOnly(t *testing.T) {
 	}
 	if len(got) != 2 || got[1] != "How are you" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestSentenceStream_StripsSelfName(t *testing.T) {
+	var got []string
+	s := &sentenceStream{emit: func(v string) { got = append(got, v) }, self: "gemmai"}
+	raw := "Gemmai: that is just a silly comment. Phineas: how about you? Gemmai："
+	s.feed(raw)
+	s.finish(raw)
+	want := []string{"that is just a silly comment.", "Phineas: how about you?"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestStripSelfName(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"Gemmai: hello.", "hello."},
+		{"GEMMAI : hello.", "hello."},
+		{"Gemmai hello.", "Gemmai hello."},
+		{"Gemmaire: hello.", "Gemmaire: hello."},
+		{"Phineas: hello.", "Phineas: hello."},
+	}
+	for _, tt := range tests {
+		if got := stripSelfName(tt.in, "gemmai"); got != tt.want {
+			t.Errorf("stripSelfName(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
 

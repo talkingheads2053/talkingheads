@@ -840,7 +840,7 @@ func (a *Actor) generateTurn(ctx context.Context, conversation *[]message.Messag
 
 	var buf strings.Builder
 	pieceBuf := make([]byte, 128)
-	stream := &sentenceStream{emit: a.outputFunc, reject: a.rejectFunc, guard: a.cfg.RepeatGuard, max: a.cfg.MaxSentences, latin: a.latinWords}
+	stream := &sentenceStream{emit: a.outputFunc, reject: a.rejectFunc, guard: a.cfg.RepeatGuard, max: a.cfg.MaxSentences, latin: a.latinWords, self: a.cfg.Stage.Self}
 	if a.streamsCalls() {
 		stream.calls = true
 		stream.cue = a.cue
@@ -1039,6 +1039,7 @@ type sentenceStream struct {
 	rejected bool
 	spoken   []string
 	latin    map[string]bool
+	self     string // actor name to drop from the start of a sentence
 }
 
 // feed speaks the complete sentences in raw that have not been spoken yet. It
@@ -1153,6 +1154,9 @@ func (s *sentenceStream) add(sentence string) {
 	if s.full() {
 		return
 	}
+	if sentence = stripSelfName(sentence, s.self); sentence == "" {
+		return
+	}
 	if len(s.pending) > 0 && s.cue != nil {
 		s.cue(s.pending)
 		s.pending = nil
@@ -1166,6 +1170,20 @@ func (s *sentenceStream) add(sentence string) {
 
 func (s *sentenceStream) full() bool {
 	return s.max > 0 && s.count >= s.max
+}
+
+// stripSelfName removes a leading "name:" when the actor labels its own line.
+func stripSelfName(sentence, name string) string {
+	if name == "" || len(sentence) <= len(name) || !strings.EqualFold(sentence[:len(name)], name) {
+		return sentence
+	}
+	rest := strings.TrimLeft(sentence[len(name):], " ")
+	for _, colon := range []string{":", "："} {
+		if after, ok := strings.CutPrefix(rest, colon); ok {
+			return strings.TrimSpace(after)
+		}
+	}
+	return sentence
 }
 
 // firstSentenceEnd returns the index just past the first sentence terminator
