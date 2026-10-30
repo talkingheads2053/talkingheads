@@ -54,7 +54,7 @@ type Music struct {
 }
 
 // Dance is the payload for the dance MQTT topic.
-// Status is StatusDancing on every beat with its Move, MoveLeft or MoveRight,
+// Status is StatusDancing on every beat with its Move, MoveLeft, MoveCenter or MoveRight,
 // or StatusStopped when the song ends.
 type Dance struct {
     Status string `json:"status"`
@@ -169,7 +169,7 @@ Then start or stop it.
 Set the dance moves. The pattern repeats over the beats, and starts as `L R`.
 
 ```json
-{"command": "moves", "moves": "L R L R L L R R"}
+{"command": "moves", "moves": "L C R C L L R R"}
 ```
 
 ### `dance`

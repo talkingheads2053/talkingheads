@@ -154,7 +154,7 @@ func (m *Music) SetMoves(moves []string) error {
 		return errors.New("no dance moves")
 	}
 	for _, move := range moves {
-		if move != commands.MoveLeft && move != commands.MoveRight {
+		if move != commands.MoveLeft && move != commands.MoveCenter && move != commands.MoveRight {
 			return fmt.Errorf("invalid dance move %q", move)
 		}
 	}

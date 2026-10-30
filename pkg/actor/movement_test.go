@@ -229,13 +229,45 @@ func TestMovementDance_TurnsForEachMove(t *testing.T) {
 	m, mc := newTestMovement()
 	defer m.Close()
 
-	for _, move := range []string{"L", "R", "L", "L"} {
+	for _, move := range []string{"L", "R", "C", "L"} {
 		m.Dance(move)
 	}
 
-	want := []string{"dance 120", "dance 60", "dance 120", "dance 120"}
+	want := []string{"dance 150", "dance 30", "dance 90", "dance 150"}
 	if got := mc.sent(); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("sent %v, want %v", got, want)
+	}
+}
+
+func TestMovementDance_RepeatedMoveBounces(t *testing.T) {
+	m, mc := newTestMovement()
+	m.bounceFor = 10 * time.Millisecond
+	defer m.Close()
+
+	for _, move := range []string{"L", "L", "R", "R", "C", "C"} {
+		m.Dance(move)
+		time.Sleep(30 * time.Millisecond)
+	}
+
+	want := "dance 150,dance 120,dance 150,dance 30,dance 60,dance 30,dance 90,dance 120,dance 90"
+	if got := strings.Join(mc.sent(), ","); got != want {
+		t.Errorf("sent %s, want %s", got, want)
+	}
+}
+
+func TestMovementDance_NoBounceAfterStop(t *testing.T) {
+	m, mc := newTestMovement()
+	m.bounceFor = 10 * time.Millisecond
+	defer m.Close()
+
+	m.Dance("L")
+	m.Dance("L")
+	m.StopDance()
+	time.Sleep(30 * time.Millisecond)
+
+	want := "dance 150,dance 120,stop"
+	if got := strings.Join(mc.sent(), ","); got != want {
+		t.Errorf("sent %s, want %s", got, want)
 	}
 }
 
@@ -286,7 +318,7 @@ func TestMovementStopDance_Rests(t *testing.T) {
 	m.StopDance()
 
 	got := mc.sent()
-	if got[len(got)-1] != "stop" || got[len(got)-2] != "dance 120" {
+	if got[len(got)-1] != "stop" || got[len(got)-2] != "dance 150" {
 		t.Errorf("expected one stop after the dance, got %v", got)
 	}
 	if !m.Wake() {

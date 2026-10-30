@@ -47,7 +47,7 @@ func parseTypedInput(text string, actorList []string) (question, error) {
 	return question{To: to, Content: content, Kind: kind, RespondTo: respondTo}, nil
 }
 
-var errDanceUsage = errors.New("usage: dance <file> <bpm> [offset], dance moves [L|R ...], dance start, or dance stop")
+var errDanceUsage = errors.New("usage: dance <file> <bpm> [offset], dance moves [L|C|R ...], dance start, or dance stop")
 
 // defaultDanceMoves is the pattern used when "dance moves" names none.
 const defaultDanceMoves = "L R"
@@ -88,8 +88,8 @@ func parseDanceMoves(fields []string) (question, error) {
 	moves := make([]string, 0, len(fields))
 	for _, f := range fields {
 		move := strings.ToUpper(f)
-		if move != commands.MoveLeft && move != commands.MoveRight {
-			return question{}, fmt.Errorf("invalid dance move %q, expected L or R", f)
+		if move != commands.MoveLeft && move != commands.MoveCenter && move != commands.MoveRight {
+			return question{}, fmt.Errorf("invalid dance move %q, expected L, C or R", f)
 		}
 		moves = append(moves, move)
 	}
