@@ -90,8 +90,10 @@ The heads can dance to a song that Dialogue plays from its `--music` directory. 
 
 ```
 dance song.wav 120
-dance slimeyfox-hypermafia-wickedness-590984.mp3 115 0.4
+dance slimeyfox-hypermafia-wickedness-590984.mp3 115.5 0.29
 ```
+
+To find the tempo and first beat of a song, run `tools/find_bpm.sh song.mp3`. It needs `ffmpeg` and prints the `dance` command to use.
 
 Then start and stop it separately:
 
