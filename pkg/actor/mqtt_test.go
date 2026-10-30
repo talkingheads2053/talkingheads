@@ -1113,7 +1113,7 @@ func TestHandleDance_MovesTheHead(t *testing.T) {
 	l.handleDance(nil, danceMsg(commands.StatusDancing, commands.MoveLeft))
 	l.handleDance(nil, danceMsg(commands.StatusStopped, ""))
 
-	want := "dance 30,dance 150,stop"
+	want := "dance 55,dance 125,stop"
 	if got := strings.Join(mc.sent(), ","); got != want {
 		t.Errorf("sent %s, want %s", got, want)
 	}
