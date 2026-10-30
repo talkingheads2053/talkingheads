@@ -147,10 +147,19 @@ const (
 	restDelay = time.Second
 	// danceTimeout ends a dance when the beats stop arriving.
 	danceTimeout = 3 * time.Second
-	// danceLeft and danceRight are the angles a dancing head swings between.
-	danceLeft  = 120
-	danceRight = 60
+	// danceBounce is how far a repeated dance move dips before it returns.
+	danceBounce = 30
+	// danceBounceTime is how long a repeated dance move stays dipped.
+	danceBounceTime = 150 * time.Millisecond
 )
+
+// danceAngles maps each dance move to its angle, within the 30–150 range
+// used for facing other actors.
+var danceAngles = map[string]int{
+	commands.MoveLeft:   150,
+	commands.MoveCenter: 90,
+	commands.MoveRight:  30,
+}
 
 // MovementOptions configures a Movement.
 type MovementOptions struct {
@@ -168,6 +177,7 @@ type Movement struct {
 	restAfter time.Duration
 	keepEvery time.Duration
 	danceFor  time.Duration
+	bounceFor time.Duration
 	now       func() time.Time
 
 	mu          sync.Mutex
@@ -177,6 +187,8 @@ type Movement struct {
 	rest        *time.Timer
 	dancing     bool
 	danceEnd    *time.Timer
+	danceAngle  int
+	danceBack   *time.Timer
 	stop        chan struct{}
 	stopOnce    sync.Once
 }
@@ -197,6 +209,7 @@ func NewMovement(commander Commander, opts MovementOptions) *Movement {
 		restAfter: restDelay,
 		keepEvery: keepaliveInterval,
 		danceFor:  danceTimeout,
+		bounceFor: danceBounceTime,
 		now:       time.Now,
 		used:      make(map[string]bool),
 		stop:      make(chan struct{}),
@@ -372,22 +385,55 @@ func (m *Movement) Rest() {
 	_ = m.commander.Send("stop")
 }
 
-// Dance turns the head left or right for one beat. Other movement waits
-// until StopDance or until the beats stop arriving.
+// Dance turns the head left, center or right for one beat. A repeated move
+// bounces toward center and back so the beat still shows. Other movement
+// waits until StopDance or until the beats stop arriving.
 func (m *Movement) Dance(move string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cancelRest()
-	m.dancing = true
-	angle := danceLeft
-	if move == commands.MoveRight {
-		angle = danceRight
+	m.cancelBounce()
+	angle, ok := danceAngles[move]
+	if !ok {
+		angle = danceAngles[commands.MoveCenter]
 	}
-	_ = m.commander.Send(fmt.Sprintf("dance %d", angle))
+	if m.dancing && angle == m.danceAngle {
+		_ = m.commander.Send(fmt.Sprintf("dance %d", bounceAngle(angle)))
+		m.danceBack = time.AfterFunc(m.bounceFor, func() { m.bounceBack(angle) })
+	} else {
+		_ = m.commander.Send(fmt.Sprintf("dance %d", angle))
+	}
+	m.dancing = true
+	m.danceAngle = angle
 	if m.danceEnd != nil {
 		m.danceEnd.Stop()
 	}
 	m.danceEnd = time.AfterFunc(m.danceFor, m.StopDance)
+}
+
+// bounceAngle returns where a repeated move dips to, toward center, or to
+// the left when already at center.
+func bounceAngle(angle int) int {
+	if angle > 90 {
+		return angle - danceBounce
+	}
+	return angle + danceBounce
+}
+
+// bounceBack returns the head to angle after a bounce, if still dancing there.
+func (m *Movement) bounceBack(angle int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.dancing && m.danceAngle == angle {
+		_ = m.commander.Send(fmt.Sprintf("dance %d", angle))
+	}
+}
+
+func (m *Movement) cancelBounce() {
+	if m.danceBack != nil {
+		m.danceBack.Stop()
+		m.danceBack = nil
+	}
 }
 
 // StopDance ends a dance and rests the head.
@@ -398,6 +444,8 @@ func (m *Movement) StopDance() {
 		return
 	}
 	m.dancing = false
+	m.danceAngle = 0
+	m.cancelBounce()
 	if m.danceEnd != nil {
 		m.danceEnd.Stop()
 		m.danceEnd = nil
@@ -419,6 +467,7 @@ func (m *Movement) Close() {
 		close(m.stop)
 		m.mu.Lock()
 		m.cancelRest()
+		m.cancelBounce()
 		if m.danceEnd != nil {
 			m.danceEnd.Stop()
 		}

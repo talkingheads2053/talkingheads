@@ -139,14 +139,14 @@ func TestMusicPlay_BeatsThenStops(t *testing.T) {
 
 func TestMusicMoves_RepeatPattern(t *testing.T) {
 	m, _ := newTestMusic(t, 0)
-	if err := m.SetMoves([]string{"L", "L", "R"}); err != nil {
+	if err := m.SetMoves([]string{"L", "C", "R"}); err != nil {
 		t.Fatal(err)
 	}
 	var got []string
 	for n := 1; n <= 7; n++ {
 		got = append(got, m.move(n))
 	}
-	if want := "L L R L L R L"; strings.Join(got, " ") != want {
+	if want := "L C R L C R L"; strings.Join(got, " ") != want {
 		t.Errorf("got %v, want %s", got, want)
 	}
 }

@@ -179,6 +179,7 @@ func TestParseTypedInput_Dance(t *testing.T) {
 		{"Dance Stop", commands.Music{Command: commands.MusicStop}},
 		{"dance moves", commands.Music{Command: commands.MusicMoves, Moves: "L R"}},
 		{"dance moves L R l r L L R R", commands.Music{Command: commands.MusicMoves, Moves: "L R L R L L R R"}},
+		{"dance moves L c R C", commands.Music{Command: commands.MusicMoves, Moves: "L C R C"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {

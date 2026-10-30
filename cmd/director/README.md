@@ -100,10 +100,11 @@ dance start
 dance stop
 ```
 
-Each head turns left or right on every beat. Set the pattern of moves with `L` and `R`. It repeats when it ends, and can change while a song plays. With no moves given, it goes back to the default `L R`:
+Each head turns left, center or right on every beat. A move that repeats the one before bounces toward center and back. Set the pattern of moves with `L`, `C` and `R`. It repeats when it ends, and can change while a song plays. With no moves given, it goes back to the default `L R`:
 
 ```
 dance moves L R L R L L R R
+dance moves L C R C
 dance moves
 ```
 

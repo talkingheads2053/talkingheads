@@ -55,7 +55,7 @@ const (
 // Music is the payload for the music MQTT topic.
 // It tells Dialogue to load a song from its music directory, play it, or stop it.
 // BPM is the tempo of the song and Offset is the seconds until the first beat.
-// Moves is the space separated dance pattern for MusicMoves, such as "L R".
+// Moves is the space separated dance pattern for MusicMoves, such as "L C R".
 type Music struct {
 	Command string  `json:"command"`
 	File    string  `json:"file,omitempty"`
@@ -69,8 +69,9 @@ const (
 )
 
 const (
-	MoveLeft  = "L"
-	MoveRight = "R"
+	MoveLeft   = "L"
+	MoveCenter = "C"
+	MoveRight  = "R"
 )
 
 // Dance is the payload for the dance MQTT topic.
